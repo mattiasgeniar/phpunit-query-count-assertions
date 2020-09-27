@@ -9,7 +9,7 @@ This works for Laravel only at the moment.
 You can install the package via composer:
 
 ```bash
-composer require mattiasgeniar/phpunit-db-querycounter
+composer require --dev mattiasgeniar/phpunit-db-querycounter
 ```
 
 ## Usage
