@@ -37,7 +37,7 @@ class QueryCounterTest extends TestCase
     /** @test */
     public function we_can_check_for_less_than_queries()
     {
-        collect(range(1,5))->each(function () {
+        collect(range(1, 5))->each(function () {
             DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
         });
 
