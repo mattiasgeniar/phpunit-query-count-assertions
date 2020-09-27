@@ -27,7 +27,6 @@
     "autoload": {
         "psr-4": {
             "Mattiasgeniar\\PhpunitDbQuerycounter\\": "src",
-            "Mattiasgeniar\\PhpunitDbQuerycounter\\Database\\Factories\\": "database/factories"
         }
     },
     "autoload-dev": {
@@ -46,9 +45,6 @@
     },
     "extra": {
         "laravel": {
-            "providers": [
-                "Mattiasgeniar\\PhpunitDbQuerycounter\\PhpunitDbQuerycounterServiceProvider"
-            ],
             "aliases": {
                 "PhpunitDbQuerycounter": "Mattiasgeniar\\PhpunitDbQuerycounter\\PhpunitDbQuerycounterFacade"
             }
