@@ -2,6 +2,7 @@
 
 namespace Mattiasgeniar\PhpunitDbQuerycounter;
 
+use Closure;
 use Illuminate\Support\Facades\DB;
 
 trait PhpunitDbQuerycounter
@@ -21,23 +22,33 @@ trait PhpunitDbQuerycounter
         return count(self::getQueriesExecuted());
     }
 
-    public function assertNoQueriesExecuted()
+    public function assertNoQueriesExecuted(): void
     {
-        return $this->assertQueryCountMatches(0);
+        $this->assertQueryCountMatches(0);
     }
 
-    public function assertQueryCountMatches(int $count)
+    public function assertQueryCountMatches(int $count, Closure $closure = null): void
     {
-        return $this->assertEquals($count, self::getQueryCount());
+        if ($closure) {
+            self::trackQueries();
+
+            $closure();
+        }
+
+        $this->assertEquals($count, self::getQueryCount());
+
+        if ($closure) {
+            DB::flushQueryLog();
+        }
     }
 
-    public function assertQueryCountLessThan(int $count)
+    public function assertQueryCountLessThan(int $count): void
     {
-        return $this->assertLessThan($count, self::getQueryCount());
+        $this->assertLessThan($count, self::getQueryCount());
     }
 
-    public function assertQueryCountGreaterThan(int $count)
+    public function assertQueryCountGreaterThan(int $count): void
     {
-        return $this->assertGreaterThan($count, self::getQueryCount());
+        $this->assertGreaterThan($count, self::getQueryCount());
     }
 }
