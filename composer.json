@@ -1,0 +1,60 @@
+{
+    "name": "mattiasgeniar/phpunit-db-querycounter",
+    "description": "A custom assertion for phpunit that allows you to count the amount of SQL queries used in a test. Can be used to enforce certain performance characteristics (ie: limit queries to X for a certain action).",
+    "keywords": [
+        "mattiasgeniar",
+        "phpunit-db-querycounter"
+    ],
+    "homepage": "https://github.com/mattiasgeniar/phpunit-db-querycounter",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Mattias Geniar",
+            "email": "m@ttias.be",
+            "homepage": "https://spatie.be",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^7.4",
+        "illuminate/contracts": "^8.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^2.16",
+        "orchestra/testbench": "^6.0",
+        "phpunit/phpunit": "^9.3",
+        "vimeo/psalm": "^3.11"
+    },
+    "autoload": {
+        "psr-4": {
+            "Mattiasgeniar\\PhpunitDbQuerycounter\\": "src",
+            "Mattiasgeniar\\PhpunitDbQuerycounter\\Database\\Factories\\": "database/factories"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Mattiasgeniar\\PhpunitDbQuerycounter\\Tests\\": "tests"
+        }
+    },
+    "scripts": {
+        "psalm": "vendor/bin/psalm",
+        "test": "vendor/bin/phpunit --colors=always",
+        "test-coverage": "vendor/bin/phpunit --coverage-html coverage",
+        "format": "vendor/bin/php-cs-fixer fix --allow-risky=yes"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Mattiasgeniar\\PhpunitDbQuerycounter\\PhpunitDbQuerycounterServiceProvider"
+            ],
+            "aliases": {
+                "PhpunitDbQuerycounter": "Mattiasgeniar\\PhpunitDbQuerycounter\\PhpunitDbQuerycounterFacade"
+            }
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
