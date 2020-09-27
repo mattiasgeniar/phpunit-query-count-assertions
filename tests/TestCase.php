@@ -1,6 +1,6 @@
 <?php
 
-namespace Mattiasgeniar\PhpunitDbQuerycounter\Tests;
+namespace Mattiasgeniar\PhpunitDbQueryCounter\Tests;
 
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -14,10 +14,5 @@ class TestCase extends Orchestra
             'database' => ':memory:',
             'prefix' => '',
         ]);
-
-        /*
-        include_once __DIR__.'/../database/migrations/create_phpunit_db_querycounter_table.php.stub';
-        (new \CreatePackageTable())->up();
-        */
     }
 }

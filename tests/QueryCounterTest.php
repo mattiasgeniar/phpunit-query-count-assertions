@@ -1,19 +1,19 @@
 <?php
 
-namespace Mattiasgeniar\PhpunitDbQuerycounter\Tests;
+namespace Mattiasgeniar\PhpunitDbQueryCounter\Tests;
 
 use Illuminate\Support\Facades\DB;
-use Mattiasgeniar\PhpunitDbQuerycounter\PhpunitDbQuerycounter;
+use Mattiasgeniar\PhpunitDbQueryCounter\AssertsQueryCounts;
 
 class QueryCounterTest extends TestCase
 {
-    use PhpunitDbQuerycounter;
+    use AssertsQueryCounts;
 
     public function setUp(): void
     {
         parent::setUp();
 
-        PhpunitDbQuerycounter::trackQueries();
+        AssertsQueryCounts::trackQueries();
     }
 
     /** @test */
