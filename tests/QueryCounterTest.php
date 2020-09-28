@@ -1,19 +1,19 @@
 <?php
 
-namespace Mattiasgeniar\PhpunitDbQuerycounter\Tests;
+namespace Mattiasgeniar\PhpunitDbQueryCounter\Tests;
 
 use Illuminate\Support\Facades\DB;
-use Mattiasgeniar\PhpunitDbQuerycounter\PhpunitDbQuerycounter;
+use Mattiasgeniar\PhpunitDbQueryCounter\AssertsQueryCounts;
 
 class QueryCounterTest extends TestCase
 {
-    use PhpunitDbQuerycounter;
+    use AssertsQueryCounts;
 
     public function setUp(): void
     {
         parent::setUp();
 
-        PhpunitDbQuerycounter::trackQueries();
+        AssertsQueryCounts::trackQueries();
     }
 
     /** @test */
@@ -32,6 +32,19 @@ class QueryCounterTest extends TestCase
         DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
 
         $this->assertQueryCountMatches(2);
+    }
+
+    /** @test */
+    public function it_can_assert_the_amount_of_queries_in_callable()
+    {
+        $this->assertQueryCountMatches(1, function() {
+            DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
+        });
+
+        $this->assertQueryCountMatches(2, function() {
+            DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
+            DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
+        });
     }
 
     /** @test */

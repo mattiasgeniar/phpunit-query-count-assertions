@@ -16,14 +16,13 @@ composer require --dev mattiasgeniar/phpunit-db-querycounter
 
 Add the `PhpunitDbQuerycounter` trait to your test-class, initialize it in the `setup()` and you can start asserting queries.
 
-``` php
-<?php
-
+```php
+use Mattiasgeniar\PhpunitDbQueryCounter\AssertsQueryCounts;
 use Mattiasgeniar\PhpunitDbQuerycounter\PhpunitDbQuerycounter;
 
 class YourTest extends TestCase
 {
-    use PhpunitDbQuerycounter;
+    use AssertsQueryCounts;
 
     public function setUp(): void
     {
@@ -52,6 +51,14 @@ $this->assertQueryCountMatches(5);      // Query count should be exactly 5
 $this->assertQueryCountLessThan(6);     // Should be less than 6 queries
 
 $this->assertQueryCountGreaterThan(4);  // Should be more than 4 queries
+```
+
+All these methods can accept a closure as an extra argument. The assertion will only take in account the queries performed inside the closure. If you use this way of testing, you don't need to call `trackQueries` yourself.
+
+```php
+$this->assertQueryCountMatches(2, function() {
+    // assertion will pass if exactly 2 queries happen here.
+});      
 ```
 
 ## Testing
