@@ -37,11 +37,11 @@ class QueryCounterTest extends TestCase
     /** @test */
     public function it_can_assert_the_amount_of_queries_in_callable()
     {
-        $this->assertQueryCountMatches(1, function() {
+        $this->assertQueryCountMatches(1, function () {
             DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
         });
 
-        $this->assertQueryCountMatches(2, function() {
+        $this->assertQueryCountMatches(2, function () {
             DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
             DB::select('SELECT * FROM sqlite_master WHERE type = "table"'); // SQLite query
         });
