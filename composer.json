@@ -1,11 +1,11 @@
 {
-    "name": "mattiasgeniar/phpunit-db-querycounter",
+    "name": "mattiasgeniar/phpunit-query-count-assertions",
     "description": "A custom assertion for phpunit that allows you to count the amount of SQL queries used in a test. Can be used to enforce certain performance characteristics (ie: limit queries to X for a certain action).",
     "keywords": [
         "mattiasgeniar",
-        "phpunit-db-querycounter"
+        "phpunit-query-count-assertions"
     ],
-    "homepage": "https://github.com/mattiasgeniar/phpunit-db-querycounter",
+    "homepage": "https://github.com/mattiasgeniar/phpunit-query-count-assertions",
     "license": "MIT",
     "authors": [
         {
