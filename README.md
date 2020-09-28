@@ -9,16 +9,15 @@ This works for Laravel only at the moment.
 You can install the package via composer:
 
 ```bash
-composer require --dev mattiasgeniar/phpunit-db-querycounter
+composer require --dev mattiasgeniar/phpunit-query-count-assertions
 ```
 
 ## Usage
 
-Add the `PhpunitDbQuerycounter` trait to your test-class, initialize it in the `setup()` and you can start asserting queries.
+Add the `AssertsQueryCounts` trait to your test-class, initialize it in the `setup()` and you can start asserting queries.
 
 ```php
-use Mattiasgeniar\PhpunitDbQueryCounter\AssertsQueryCounts;
-use Mattiasgeniar\PhpunitDbQuerycounter\PhpunitDbQuerycounter;
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 
 class YourTest extends TestCase
 {
@@ -28,7 +27,7 @@ class YourTest extends TestCase
     {
         parent::setUp();
 
-        PhpunitDbQuerycounter::trackQueries();
+        AssertsQueryCounts::trackQueries();
     }
 
     /** @test */
@@ -58,7 +57,7 @@ All these methods can accept a closure as an extra argument. The assertion will 
 ```php
 $this->assertQueryCountMatches(2, function() {
     // assertion will pass if exactly 2 queries happen here.
-});      
+});
 ```
 
 ## Testing

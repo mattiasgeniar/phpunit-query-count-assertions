@@ -1,6 +1,6 @@
 <?php
 
-namespace Mattiasgeniar\PhpunitDbQueryCounter;
+namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
 use Illuminate\Support\Facades\DB;

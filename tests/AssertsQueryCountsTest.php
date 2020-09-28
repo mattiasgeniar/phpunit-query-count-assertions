@@ -1,9 +1,10 @@
 <?php
 
-namespace Mattiasgeniar\PhpunitDbQueryCounter\Tests;
+namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 
 use Illuminate\Support\Facades\DB;
-use Mattiasgeniar\PhpunitDbQueryCounter\AssertsQueryCounts;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Tests\TestCase;
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 
 class QueryCounterTest extends TestCase
 {

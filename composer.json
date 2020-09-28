@@ -26,12 +26,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Mattiasgeniar\\PhpunitDbQueryCounter\\": "src"
+            "Mattiasgeniar\\PhpunitQueryCountAssertions\\": "src"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Mattiasgeniar\\PhpunitDbQueryCounter\\Tests\\": "tests"
+            "Mattiasgeniar\\PhpunitQueryCountAssertions\\Tests\\": "tests"
         }
     },
     "scripts": {
@@ -42,13 +42,6 @@
     },
     "config": {
         "sort-packages": true
-    },
-    "extra": {
-        "laravel": {
-            "aliases": {
-                "PhpunitDbQuerycounter": "Mattiasgeniar\\PhpunitDbQuerycounter\\PhpunitDbQuerycounterFacade"
-            }
-        }
     },
     "minimum-stability": "dev",
     "prefer-stable": true

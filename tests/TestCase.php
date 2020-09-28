@@ -1,6 +1,6 @@
 <?php
 
-namespace Mattiasgeniar\PhpunitDbQueryCounter\Tests;
+namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 
 use Orchestra\Testbench\TestCase as Orchestra;
 
