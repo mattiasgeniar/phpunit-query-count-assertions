@@ -1,6 +1,6 @@
 # Laravel query count assertions for PHPUnit
 
-A custom assertion for phpunit that allows you to count the amount of SQL queries used in a test. Can be used to enforce certain performance characteristics (ie: limit queries to X for a certain action).
+A custom assertion for phpunit that allows you to count the number of SQL queries used in a test. Can be used to enforce certain performance characteristics (ie: limit queries to X for a certain action).
 
 This works for Laravel only at the moment.
 
