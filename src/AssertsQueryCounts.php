@@ -3,82 +3,77 @@
 namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
+use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
 
 trait AssertsQueryCounts
 {
-    public function assertNoQueriesExecuted(Closure $closure = null): void
+    protected static $trackedConnection;
+
+    public function assertNoQueriesExecuted(Closure $closure = null, string $connection = null): void
+    {
+        $this->assertQueryCount(function (int $count) {
+            $this->assertEquals(0, $count);
+        }, $closure, $connection);
+    }
+
+    public function assertQueryCountMatches(int $expected, Closure $closure = null, string $connection = null): void
+    {
+        $this->assertQueryCount(function (int $count) use ($expected) {
+            $this->assertEquals($expected, $count);
+        }, $closure, $connection);
+    }
+
+    public function assertQueryCountLessThan(int $expected, Closure $closure = null, string $connection = null): void
+    {
+        $this->assertQueryCount(function (int $count) use ($expected) {
+            $this->assertLessThan($expected, $count);
+        }, $closure, $connection);
+    }
+
+    public function assertQueryCountGreaterThan(int $expected, Closure $closure = null, string $connection = null): void
+    {
+        $this->assertQueryCount(function (int $count) use ($expected) {
+            $this->assertGreaterThan($expected, $count);
+        }, $closure, $connection);
+    }
+
+    protected function assertQueryCount(Closure $assert, Closure $closure = null, string $connection = null): void
     {
         if ($closure) {
-            self::trackQueries();
+            $trackedConnection = static::$trackedConnection;
+
+            self::trackQueries($connection);
 
             $closure();
         }
 
-        $this->assertQueryCountMatches(0);
+        $assert(self::getQueryCount($connection));
 
         if ($closure) {
-            DB::flushQueryLog();
+            static::getTrackedConnection($connection)->flushQueryLog();
+
+            static::$trackedConnection = $trackedConnection;
         }
     }
 
-    public function assertQueryCountMatches(int $count, Closure $closure = null): void
+    public static function trackQueries(?string $connection = null): void
     {
-        if ($closure) {
-            self::trackQueries();
-
-            $closure();
-        }
-
-        $this->assertEquals($count, self::getQueryCount());
-
-        if ($closure) {
-            DB::flushQueryLog();
-        }
+        static::getTrackedConnection(static::$trackedConnection = $connection)->enableQueryLog();
     }
 
-    public function assertQueryCountLessThan(int $count, Closure $closure = null): void
+    public static function getQueriesExecuted(?string $connection = null): array
     {
-        if ($closure) {
-            self::trackQueries();
-
-            $closure();
-        }
-
-        $this->assertLessThan($count, self::getQueryCount());
-
-        if ($closure) {
-            DB::flushQueryLog();
-        }
+        return static::getTrackedConnection($connection)->getQueryLog();
     }
 
-    public function assertQueryCountGreaterThan(int $count, Closure $closure = null): void
+    public static function getQueryCount(?string $connection = null): int
     {
-        if ($closure) {
-            self::trackQueries();
-
-            $closure();
-        }
-
-        $this->assertGreaterThan($count, self::getQueryCount());
-
-        if ($closure) {
-            DB::flushQueryLog();
-        }
+        return count(self::getQueriesExecuted($connection));
     }
 
-    public static function trackQueries(): void
+    protected static function getTrackedConnection(?string $connection = null): Connection
     {
-        DB::enableQueryLog();
-    }
-
-    public static function getQueriesExecuted(): array
-    {
-        return DB::getQueryLog();
-    }
-
-    public static function getQueryCount(): int
-    {
-        return count(self::getQueriesExecuted());
+        return DB::connection($connection ?? static::$trackedConnection);
     }
 }

@@ -38,6 +38,12 @@ class YourTest extends TestCase
 }
 ```
 
+If you want to track queries from another database, you can specify the connection name during initialization:
+
+```php
+AssertQueryCount::trackQueries('sqlite');
+```
+
 ## Available assertions/methods
 
 You can use the following methods, their names should be self-explanatory:
@@ -52,12 +58,17 @@ $this->assertQueryCountLessThan(6);     // Should be less than 6 queries
 $this->assertQueryCountGreaterThan(4);  // Should be more than 4 queries
 ```
 
-All these methods can accept a closure as an extra argument. The assertion will only take in account the queries performed inside the closure. If you use this way of testing, you don't need to call `trackQueries` yourself.
+All these methods can accept a closure as an extra argument. The assertion will only take in account the queries performed inside the closure. If you use this way of testing, you don't need to call `trackQueries` yourself. You can also specify
+the name of the database connection after the closure.
 
 ```php
 $this->assertQueryCountMatches(2, function() {
     // assertion will pass if exactly 2 queries happen here.
 });
+
+$this->assertQueryCountLessThan(3, function() {
+    // assertion will pass if less than 3 queries happen in the sqlite database.
+}, 'sqlite');
 ```
 
 ## Testing
