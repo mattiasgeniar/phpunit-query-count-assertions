@@ -16,12 +16,12 @@
     ],
     "require": {
         "php": "^7.3|^7.4|^8.0",
-        "illuminate/contracts": "^7.0|^8.0"
+        "illuminate/contracts": "^7.0|^8.0|^9.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^2.16",
-        "orchestra/testbench": "^5.0",
-        "phpunit/phpunit": "^9.3",
+        "orchestra/testbench": "^5.0|^6.23|^7.0",
+        "phpunit/phpunit": "^9.5",
         "vimeo/psalm": "^3.11"
     },
     "autoload": {
