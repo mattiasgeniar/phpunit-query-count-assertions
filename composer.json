@@ -20,8 +20,7 @@
     },
     "require-dev": {
         "orchestra/testbench": "^5.0|^6.23|^7.0",
-        "phpunit/phpunit": "^9.5",
-        "vimeo/psalm": "^3.11"
+        "phpunit/phpunit": "^9.5"
     },
     "autoload": {
         "psr-4": {
@@ -34,7 +33,6 @@
         }
     },
     "scripts": {
-        "psalm": "vendor/bin/psalm",
         "test": "vendor/bin/phpunit --colors=always",
         "test-coverage": "vendor/bin/phpunit --coverage-html coverage",
         "format": "vendor/bin/php-cs-fixer fix --allow-risky=yes"
