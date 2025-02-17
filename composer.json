@@ -16,11 +16,11 @@
     ],
     "require": {
         "php": "^7.3|^7.4|^8.0",
-        "illuminate/contracts": "^7.0|^8.0|^9.0|^10.0|^11.0"
+        "illuminate/contracts": "^7.0|^8.0|^9.0|^10.0|^11.0|^12.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^5.0|^6.23|^7.0|^8.0|^9.0",
-        "phpunit/phpunit": "^9.5|^10.5"
+        "orchestra/testbench": "^5.0|^6.23|^7.0|^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^9.5|^10.5|^11.5.3"
     },
     "autoload": {
         "psr-4": {
