@@ -2,6 +2,10 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## 1.1.5 - 2025-02-24
+
+PHP 8.4 support
+
 ## 1.1.4 - 2025-02-17
 
 Support for Laravel 12
