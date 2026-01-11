@@ -3,7 +3,10 @@
     "description": "A custom assertion for phpunit that allows you to count the amount of SQL queries used in a test. Can be used to enforce certain performance characteristics (ie: limit queries to X for a certain action).",
     "keywords": [
         "mattiasgeniar",
-        "phpunit-query-count-assertions"
+        "phpunit-query-count-assertions",
+        "laravel",
+        "testing",
+        "queries"
     ],
     "homepage": "https://github.com/mattiasgeniar/phpunit-query-count-assertions",
     "license": "MIT",
@@ -19,6 +22,8 @@
         "illuminate/contracts": "^11.0|^12.0"
     },
     "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.18",
         "orchestra/testbench": "^9.0|^10.0",
         "phpunit/phpunit": "^11.0"
     },
@@ -33,12 +38,22 @@
         }
     },
     "scripts": {
+        "analyse": "vendor/bin/phpstan analyse --memory-limit=2G",
         "test": "vendor/bin/phpunit --colors=always",
         "test-coverage": "vendor/bin/phpunit --coverage-html coverage",
-        "format": "vendor/bin/php-cs-fixer fix --allow-risky=yes"
+        "format": "vendor/bin/pint"
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [],
+            "aliases": {}
+        }
     },
     "minimum-stability": "dev",
     "prefer-stable": true

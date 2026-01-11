@@ -21,7 +21,7 @@ trait AssertsQueryCounts
         $this->withQueryTracking(
             $closure,
             fn () => $this->assertEquals($count, self::getQueryCount(), $this->formatFailureMessage(
-                "Expected {$count} queries, got " . self::getQueryCount() . "."
+                "Expected {$count} queries, got " . self::getQueryCount() . '.'
             ))
         );
     }
@@ -31,7 +31,7 @@ trait AssertsQueryCounts
         $this->withQueryTracking(
             $closure,
             fn () => $this->assertLessThan($count, self::getQueryCount(), $this->formatFailureMessage(
-                "Expected fewer than {$count} queries, got " . self::getQueryCount() . "."
+                "Expected fewer than {$count} queries, got " . self::getQueryCount() . '.'
             ))
         );
     }
@@ -41,7 +41,7 @@ trait AssertsQueryCounts
         $this->withQueryTracking(
             $closure,
             fn () => $this->assertLessThanOrEqual($count, self::getQueryCount(), $this->formatFailureMessage(
-                "Expected at most {$count} queries, got " . self::getQueryCount() . "."
+                "Expected at most {$count} queries, got " . self::getQueryCount() . '.'
             ))
         );
     }
@@ -51,7 +51,7 @@ trait AssertsQueryCounts
         $this->withQueryTracking(
             $closure,
             fn () => $this->assertGreaterThan($count, self::getQueryCount(), $this->formatFailureMessage(
-                "Expected more than {$count} queries, got " . self::getQueryCount() . "."
+                "Expected more than {$count} queries, got " . self::getQueryCount() . '.'
             ))
         );
     }
@@ -61,7 +61,7 @@ trait AssertsQueryCounts
         $this->withQueryTracking(
             $closure,
             fn () => $this->assertGreaterThanOrEqual($count, self::getQueryCount(), $this->formatFailureMessage(
-                "Expected at least {$count} queries, got " . self::getQueryCount() . "."
+                "Expected at least {$count} queries, got " . self::getQueryCount() . '.'
             ))
         );
     }
@@ -108,7 +108,7 @@ trait AssertsQueryCounts
             $violations,
             $this->formatLazyLoadingFailureMessage(
                 $violations,
-                "Expected {$expectedCount} lazy loading violations, got " . count($violations) . "."
+                "Expected {$expectedCount} lazy loading violations, got " . count($violations) . '.'
             )
         );
     }
@@ -160,7 +160,7 @@ trait AssertsQueryCounts
             return $prefix ?? 'No lazy loading violations detected.';
         }
 
-        $message = $prefix ?? "Lazy loading violations detected:";
+        $message = $prefix ?? 'Lazy loading violations detected:';
         $message .= "\nViolations:";
 
         foreach ($violations as $index => $violation) {

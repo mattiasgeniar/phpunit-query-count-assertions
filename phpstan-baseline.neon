@@ -1,0 +1,7 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Trait Mattiasgeniar\\PhpunitQueryCountAssertions\\AssertsQueryCounts is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: src/AssertsQueryCounts.php
