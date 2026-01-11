@@ -97,6 +97,46 @@ Queries executed:
       Bindings: [1, 2, 3]
 ```
 
+## Lazy loading / N+1 detection
+
+Detect N+1 query problems by leveraging Laravel's built-in lazy loading prevention:
+
+```php
+// Fails if any lazy loading occurs (N+1 detected)
+$this->assertNoLazyLoading(function () {
+    $users = User::all();
+
+    foreach ($users as $user) {
+        $user->posts->count(); // N+1! This will fail
+    }
+});
+
+// Passes - using eager loading
+$this->assertNoLazyLoading(function () {
+    $users = User::with('posts')->get();
+
+    foreach ($users as $user) {
+        $user->posts->count(); // Already loaded, no N+1
+    }
+});
+
+// Assert specific number of lazy loading violations
+$this->assertLazyLoadingCount(2, function () {
+    // Expect exactly 2 lazy loads
+});
+```
+
+When a lazy loading violation is detected, you'll see which relations were lazy loaded:
+
+```
+Lazy loading violations detected:
+Violations:
+  1. App\Models\User::$posts
+  2. App\Models\User::$posts
+```
+
+**Note:** Laravel only triggers lazy loading prevention when loading multiple models. A single model fetch won't trigger violations.
+
 ## Helper methods
 
 ```php
@@ -105,6 +145,9 @@ $queries = self::getQueriesExecuted();
 
 // Get the current query count
 $count = self::getQueryCount();
+
+// Get lazy loading violations (after using assertNoLazyLoading)
+$violations = self::getLazyLoadingViolations();
 ```
 
 ## Testing

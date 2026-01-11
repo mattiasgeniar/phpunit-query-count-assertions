@@ -3,10 +3,14 @@
 namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use ReflectionProperty;
 
 trait AssertsQueryCounts
 {
+    private static array $lazyLoadingViolations = [];
+
     public function assertNoQueriesExecuted(?Closure $closure = null): void
     {
         $this->assertQueryCountMatches(0, $closure);
@@ -75,18 +79,110 @@ trait AssertsQueryCounts
         });
     }
 
+    /**
+     * Assert that no lazy loading occurs within the closure.
+     *
+     * This leverages Laravel's built-in lazy loading prevention to detect N+1 queries.
+     *
+     * @see https://laravel.com/docs/eloquent-relationships#preventing-lazy-loading
+     */
+    public function assertNoLazyLoading(Closure $closure): void
+    {
+        $violations = $this->collectLazyLoadingViolations($closure);
+
+        $this->assertEmpty(
+            $violations,
+            $this->formatLazyLoadingFailureMessage($violations)
+        );
+    }
+
+    /**
+     * Assert that lazy loading occurs a specific number of times within the closure.
+     */
+    public function assertLazyLoadingCount(int $expectedCount, Closure $closure): void
+    {
+        $violations = $this->collectLazyLoadingViolations($closure);
+
+        $this->assertCount(
+            $expectedCount,
+            $violations,
+            $this->formatLazyLoadingFailureMessage(
+                $violations,
+                "Expected {$expectedCount} lazy loading violations, got " . count($violations) . "."
+            )
+        );
+    }
+
+    /**
+     * Get the lazy loading violations that were collected.
+     *
+     * @return array<int, array{model: string, relation: string}>
+     */
+    public static function getLazyLoadingViolations(): array
+    {
+        return self::$lazyLoadingViolations;
+    }
+
+    private function collectLazyLoadingViolations(Closure $closure): array
+    {
+        self::$lazyLoadingViolations = [];
+
+        // Store original state using reflection
+        $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
+        $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
+
+        $originalPrevention = $preventionProperty->getValue(null);
+        $originalCallback = $callbackProperty->getValue(null);
+
+        // Enable lazy loading prevention with our collector
+        Model::preventLazyLoading();
+        Model::handleLazyLoadingViolationUsing(function (Model $model, string $relation): void {
+            self::$lazyLoadingViolations[] = [
+                'model' => $model::class,
+                'relation' => $relation,
+            ];
+        });
+
+        try {
+            $closure();
+        } finally {
+            // Restore original state
+            $preventionProperty->setValue(null, $originalPrevention);
+            $callbackProperty->setValue(null, $originalCallback);
+        }
+
+        return self::$lazyLoadingViolations;
+    }
+
+    private function formatLazyLoadingFailureMessage(array $violations, ?string $prefix = null): string
+    {
+        if (empty($violations)) {
+            return $prefix ?? 'No lazy loading violations detected.';
+        }
+
+        $message = $prefix ?? "Lazy loading violations detected:";
+        $message .= "\nViolations:";
+
+        foreach ($violations as $index => $violation) {
+            $number = $index + 1;
+            $message .= "\n  {$number}. {$violation['model']}::\${$violation['relation']}";
+        }
+
+        return $message;
+    }
+
     private function withQueryTracking(?Closure $closure, callable $assertion): void
     {
-        if ($closure) {
-            self::trackQueries();
-            $closure();
+        if ($closure === null) {
+            $assertion();
+
+            return;
         }
 
+        self::trackQueries();
+        $closure();
         $assertion();
-
-        if ($closure) {
-            DB::flushQueryLog();
-        }
+        DB::flushQueryLog();
     }
 
     private function formatFailureMessage(string $message): string
@@ -117,6 +213,7 @@ trait AssertsQueryCounts
 
     public static function trackQueries(): void
     {
+        DB::flushQueryLog();
         DB::enableQueryLog();
     }
 

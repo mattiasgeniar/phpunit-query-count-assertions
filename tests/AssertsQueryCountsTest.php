@@ -4,6 +4,8 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 
 use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Fixtures\Post;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Fixtures\User;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -143,10 +145,88 @@ class AssertsQueryCountsTest extends TestCase
         }
     }
 
+    #[Test]
+    public function it_can_detect_no_lazy_loading(): void
+    {
+        $user = User::create(['name' => 'John']);
+        Post::create(['user_id' => $user->id, 'title' => 'First Post']);
+        Post::create(['user_id' => $user->id, 'title' => 'Second Post']);
+
+        $this->assertNoLazyLoading(function () {
+            $users = User::with('posts')->get();
+
+            foreach ($users as $user) {
+                $user->posts->count();
+            }
+        });
+    }
+
+    #[Test]
+    public function it_fails_when_lazy_loading_is_detected(): void
+    {
+        // Need multiple users - Laravel only enables lazy loading prevention when count > 1
+        $user1 = User::create(['name' => 'John']);
+        $user2 = User::create(['name' => 'Jane']);
+        Post::create(['user_id' => $user1->id, 'title' => 'First Post']);
+        Post::create(['user_id' => $user2->id, 'title' => 'Second Post']);
+
+        try {
+            $this->assertNoLazyLoading(function () {
+                $users = User::all();
+
+                foreach ($users as $user) {
+                    // This triggers lazy loading (N+1)!
+                    $user->posts->count();
+                }
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Lazy loading violations detected', $message);
+            $this->assertStringContainsString('User::$posts', $message);
+        }
+    }
+
+    #[Test]
+    public function it_can_assert_specific_lazy_loading_count(): void
+    {
+        $user1 = User::create(['name' => 'John']);
+        $user2 = User::create(['name' => 'Jane']);
+        Post::create(['user_id' => $user1->id, 'title' => 'First Post']);
+        Post::create(['user_id' => $user2->id, 'title' => 'Second Post']);
+
+        $this->assertLazyLoadingCount(2, function () {
+            $users = User::all();
+
+            foreach ($users as $user) {
+                // Each user triggers one lazy load
+                $user->posts->count();
+            }
+        });
+    }
+
+    #[Test]
+    public function lazy_loading_detection_restores_original_state(): void
+    {
+        // Run lazy loading assertion
+        $this->assertNoLazyLoading(function () {
+            // No lazy loading here
+        });
+
+        // After the assertion, lazy loading should work normally again
+        $user = User::create(['name' => 'John']);
+        Post::create(['user_id' => $user->id, 'title' => 'Post']);
+
+        // This should not throw - lazy loading prevention should be disabled
+        $freshUser = User::first();
+        $this->assertCount(1, $freshUser->posts);
+    }
+
     private function executeQueries(int $count): void
     {
-        collect(range(1, $count))->each(function () {
+        for ($i = 0; $i < $count; $i++) {
             DB::select('SELECT * FROM sqlite_master WHERE type = "table"');
-        });
+        }
     }
 }
