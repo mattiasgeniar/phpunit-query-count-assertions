@@ -1,6 +1,9 @@
 # Laravel query count assertions for PHPUnit
 
-[![Tests](https://github.com/mattiasgeniar/phpunit-query-count-assertions/actions/workflows/run-tests.yml/badge.svg)](https://github.com/mattiasgeniar/phpunit-query-count-assertions/actions/workflows/run-tests.yml)
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/mattiasgeniar/phpunit-query-count-assertions.svg?style=flat-square)](https://packagist.org/packages/mattiasgeniar/phpunit-query-count-assertions)
+[![Total Downloads](https://img.shields.io/packagist/dt/mattiasgeniar/phpunit-query-count-assertions.svg?style=flat-square)](https://packagist.org/packages/mattiasgeniar/phpunit-query-count-assertions)
+[![Tests](https://img.shields.io/github/actions/workflow/status/mattiasgeniar/phpunit-query-count-assertions/run-tests.yml?branch=master&label=tests&style=flat-square)](https://github.com/mattiasgeniar/phpunit-query-count-assertions/actions/workflows/run-tests.yml)
+[![PHP Version](https://img.shields.io/packagist/php-v/mattiasgeniar/phpunit-query-count-assertions.svg?style=flat-square)](https://packagist.org/packages/mattiasgeniar/phpunit-query-count-assertions)
 
 A custom assertion for phpunit that allows you to count the number of SQL queries used in a test. Can be used to enforce certain performance characteristics (ie: limit queries to X for a certain action).
 
