@@ -16,7 +16,9 @@ trait AssertsQueryCounts
     {
         $this->withQueryTracking(
             $closure,
-            fn () => $this->assertEquals($count, self::getQueryCount())
+            fn () => $this->assertEquals($count, self::getQueryCount(), $this->formatFailureMessage(
+                "Expected {$count} queries, got " . self::getQueryCount() . "."
+            ))
         );
     }
 
@@ -24,7 +26,19 @@ trait AssertsQueryCounts
     {
         $this->withQueryTracking(
             $closure,
-            fn () => $this->assertLessThan($count, self::getQueryCount())
+            fn () => $this->assertLessThan($count, self::getQueryCount(), $this->formatFailureMessage(
+                "Expected fewer than {$count} queries, got " . self::getQueryCount() . "."
+            ))
+        );
+    }
+
+    public function assertQueryCountLessThanOrEqual(int $count, ?Closure $closure = null): void
+    {
+        $this->withQueryTracking(
+            $closure,
+            fn () => $this->assertLessThanOrEqual($count, self::getQueryCount(), $this->formatFailureMessage(
+                "Expected at most {$count} queries, got " . self::getQueryCount() . "."
+            ))
         );
     }
 
@@ -32,8 +46,33 @@ trait AssertsQueryCounts
     {
         $this->withQueryTracking(
             $closure,
-            fn () => $this->assertGreaterThan($count, self::getQueryCount())
+            fn () => $this->assertGreaterThan($count, self::getQueryCount(), $this->formatFailureMessage(
+                "Expected more than {$count} queries, got " . self::getQueryCount() . "."
+            ))
         );
+    }
+
+    public function assertQueryCountGreaterThanOrEqual(int $count, ?Closure $closure = null): void
+    {
+        $this->withQueryTracking(
+            $closure,
+            fn () => $this->assertGreaterThanOrEqual($count, self::getQueryCount(), $this->formatFailureMessage(
+                "Expected at least {$count} queries, got " . self::getQueryCount() . "."
+            ))
+        );
+    }
+
+    public function assertQueryCountBetween(int $min, int $max, ?Closure $closure = null): void
+    {
+        $this->withQueryTracking($closure, function () use ($min, $max) {
+            $count = self::getQueryCount();
+            $message = $this->formatFailureMessage(
+                "Expected between {$min} and {$max} queries, got {$count}."
+            );
+
+            $this->assertGreaterThanOrEqual($min, $count, $message);
+            $this->assertLessThanOrEqual($max, $count, $message);
+        });
     }
 
     private function withQueryTracking(?Closure $closure, callable $assertion): void
@@ -48,6 +87,32 @@ trait AssertsQueryCounts
         if ($closure) {
             DB::flushQueryLog();
         }
+    }
+
+    private function formatFailureMessage(string $message): string
+    {
+        $queries = self::getQueriesExecuted();
+
+        if (empty($queries)) {
+            return $message . "\nNo queries were executed.";
+        }
+
+        $formatted = $message . "\nQueries executed:";
+
+        foreach ($queries as $index => $query) {
+            $number = $index + 1;
+            $sql = $query['query'];
+            $time = round($query['time'], 2);
+
+            $formatted .= "\n  {$number}. [{$time}ms] {$sql}";
+
+            if (! empty($query['bindings'])) {
+                $bindings = json_encode($query['bindings']);
+                $formatted .= "\n      Bindings: {$bindings}";
+            }
+        }
+
+        return $formatted;
     }
 
     public static function trackQueries(): void
