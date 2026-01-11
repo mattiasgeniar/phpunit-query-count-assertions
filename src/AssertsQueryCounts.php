@@ -9,58 +9,41 @@ trait AssertsQueryCounts
 {
     public function assertNoQueriesExecuted(?Closure $closure = null): void
     {
-        if ($closure) {
-            self::trackQueries();
-
-            $closure();
-        }
-
-        $this->assertQueryCountMatches(0);
-
-        if ($closure) {
-            DB::flushQueryLog();
-        }
+        $this->assertQueryCountMatches(0, $closure);
     }
 
     public function assertQueryCountMatches(int $count, ?Closure $closure = null): void
     {
-        if ($closure) {
-            self::trackQueries();
-
-            $closure();
-        }
-
-        $this->assertEquals($count, self::getQueryCount());
-
-        if ($closure) {
-            DB::flushQueryLog();
-        }
+        $this->withQueryTracking(
+            $closure,
+            fn () => $this->assertEquals($count, self::getQueryCount())
+        );
     }
 
     public function assertQueryCountLessThan(int $count, ?Closure $closure = null): void
     {
-        if ($closure) {
-            self::trackQueries();
-
-            $closure();
-        }
-
-        $this->assertLessThan($count, self::getQueryCount());
-
-        if ($closure) {
-            DB::flushQueryLog();
-        }
+        $this->withQueryTracking(
+            $closure,
+            fn () => $this->assertLessThan($count, self::getQueryCount())
+        );
     }
 
     public function assertQueryCountGreaterThan(int $count, ?Closure $closure = null): void
     {
+        $this->withQueryTracking(
+            $closure,
+            fn () => $this->assertGreaterThan($count, self::getQueryCount())
+        );
+    }
+
+    private function withQueryTracking(?Closure $closure, callable $assertion): void
+    {
         if ($closure) {
             self::trackQueries();
-
             $closure();
         }
 
-        $this->assertGreaterThan($count, self::getQueryCount());
+        $assertion();
 
         if ($closure) {
             DB::flushQueryLog();
