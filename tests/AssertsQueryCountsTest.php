@@ -223,6 +223,218 @@ class AssertsQueryCountsTest extends TestCase
         $this->assertCount(1, $freshUser->posts);
     }
 
+    #[Test]
+    public function it_can_assert_queries_use_indexes(): void
+    {
+        User::create(['name' => 'John']);
+
+        // Primary key lookup uses index
+        $this->assertAllQueriesUseIndexes(function () {
+            User::find(1);
+        });
+    }
+
+    #[Test]
+    public function it_detects_full_table_scans(): void
+    {
+        User::create(['name' => 'John']);
+        User::create(['name' => 'Jane']);
+
+        try {
+            $this->assertAllQueriesUseIndexes(function () {
+                // This does a full table scan (no index on 'name')
+                User::where('name', 'John')->get();
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Queries with index issues detected', $message);
+            $this->assertStringContainsString('Full table scan', $message);
+            $this->assertStringContainsString('users', $message);
+        }
+    }
+
+    #[Test]
+    public function it_can_use_closure_with_index_assertion(): void
+    {
+        User::create(['name' => 'John']);
+
+        // Using primary key - uses index
+        $this->assertAllQueriesUseIndexes(function () {
+            DB::select('SELECT * FROM users WHERE id = ?', [1]);
+        });
+    }
+
+    #[Test]
+    public function index_assertion_ignores_non_select_queries(): void
+    {
+        // INSERT queries should be ignored
+        $this->assertAllQueriesUseIndexes(function () {
+            User::create(['name' => 'John']);
+        });
+    }
+
+    #[Test]
+    public function index_analysis_results_are_available_after_assertion(): void
+    {
+        User::create(['name' => 'John']);
+
+        $this->assertAllQueriesUseIndexes(function () {
+            User::find(1);
+        });
+
+        $results = self::getIndexAnalysisResults();
+
+        $this->assertNotEmpty($results);
+        $this->assertArrayHasKey('query', $results[0]);
+        $this->assertArrayHasKey('explain', $results[0]);
+    }
+
+    #[Test]
+    public function it_can_detect_duplicate_queries(): void
+    {
+        try {
+            $this->assertNoDuplicateQueries(function () {
+                // Same query executed twice
+                DB::select('SELECT 1');
+                DB::select('SELECT 1');
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Duplicate queries detected', $message);
+            $this->assertStringContainsString('Executed 2 times', $message);
+            $this->assertStringContainsString('SELECT 1', $message);
+        }
+    }
+
+    #[Test]
+    public function it_passes_when_no_duplicate_queries(): void
+    {
+        $this->assertNoDuplicateQueries(function () {
+            DB::select('SELECT 1');
+            DB::select('SELECT 2');
+            DB::select('SELECT 3');
+        });
+    }
+
+    #[Test]
+    public function duplicate_detection_considers_bindings(): void
+    {
+        User::create(['name' => 'John']);
+        User::create(['name' => 'Jane']);
+
+        // Different bindings = not duplicates
+        $this->assertNoDuplicateQueries(function () {
+            User::find(1);
+            User::find(2);
+        });
+    }
+
+    #[Test]
+    public function it_detects_multiple_duplicate_queries(): void
+    {
+        try {
+            $this->assertNoDuplicateQueries(function () {
+                DB::select('SELECT 1');
+                DB::select('SELECT 1');
+                DB::select('SELECT 2');
+                DB::select('SELECT 2');
+                DB::select('SELECT 2');
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Executed 2 times', $message);
+            $this->assertStringContainsString('Executed 3 times', $message);
+        }
+    }
+
+    #[Test]
+    public function duplicate_queries_are_available_after_assertion(): void
+    {
+        try {
+            $this->assertNoDuplicateQueries(function () {
+                DB::select('SELECT 1');
+                DB::select('SELECT 1');
+            });
+        } catch (AssertionFailedError) {
+            // Expected
+        }
+
+        $duplicates = self::getDuplicateQueries();
+
+        $this->assertNotEmpty($duplicates);
+        $first = array_values($duplicates)[0];
+        $this->assertEquals(2, $first['count']);
+        $this->assertEquals('SELECT 1', $first['query']);
+    }
+
+    #[Test]
+    public function it_can_assert_max_query_time(): void
+    {
+        // Fast queries should pass with a generous threshold
+        $this->assertMaxQueryTime(1000, function () {
+            DB::select('SELECT 1');
+            DB::select('SELECT 2');
+        });
+    }
+
+    #[Test]
+    public function it_can_assert_total_query_time(): void
+    {
+        // Fast queries should pass with a generous threshold
+        $this->assertTotalQueryTime(1000, function () {
+            DB::select('SELECT 1');
+            DB::select('SELECT 2');
+            DB::select('SELECT 3');
+        });
+    }
+
+    #[Test]
+    public function total_query_time_helper_returns_correct_value(): void
+    {
+        self::trackQueries();
+
+        DB::select('SELECT 1');
+        DB::select('SELECT 2');
+
+        $totalTime = self::getTotalQueryTime();
+
+        // Time should be >= 0 (can't predict exact timing)
+        $this->assertGreaterThanOrEqual(0, $totalTime);
+    }
+
+    #[Test]
+    public function max_query_time_fails_with_zero_threshold(): void
+    {
+        try {
+            $this->assertMaxQueryTime(0, function () {
+                DB::select('SELECT 1');
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $this->assertStringContainsString('Queries exceeding 0ms', $e->getMessage());
+            $this->assertStringContainsString('SELECT 1', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function total_query_time_fails_with_zero_threshold(): void
+    {
+        try {
+            $this->assertTotalQueryTime(0, function () {
+                DB::select('SELECT 1');
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $this->assertStringContainsString('exceeds budget of 0ms', $e->getMessage());
+        }
+    }
+
     private function executeQueries(int $count): void
     {
         for ($i = 0; $i < $count; $i++) {
