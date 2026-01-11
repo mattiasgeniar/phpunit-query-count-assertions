@@ -242,6 +242,52 @@ trait AssertsQueryCounts
     }
 
     /**
+     * Assert that queries are efficient: no N+1, no duplicates, and all use indexes.
+     *
+     * Bundles common query performance checks into a single assertion:
+     * - No lazy loading (N+1) violations
+     * - No duplicate queries (same query executed multiple times)
+     * - All queries use indexes (no full table scans)
+     */
+    public function assertQueriesAreEfficient(Closure $closure): void
+    {
+        self::$lazyLoadingViolations = [];
+        self::$duplicateQueries = [];
+        self::$indexAnalysisResults = [];
+
+        self::trackQueries();
+
+        $this->withLazyLoadingTracking($closure);
+
+        $queries = self::getQueriesExecuted();
+        $issues = [];
+
+        if (! empty(self::$lazyLoadingViolations)) {
+            $issues[] = $this->formatLazyLoadingFailureMessage(self::$lazyLoadingViolations);
+        }
+
+        $duplicates = $this->findDuplicateQueries($queries);
+        if (! empty($duplicates)) {
+            $issues[] = $this->formatDuplicateQueryFailureMessage($duplicates);
+        }
+
+        $analyser = $this->getQueryAnalyser();
+        if ($analyser !== null) {
+            $indexIssues = $this->analyzeQueriesForIndexUsage($queries);
+            if (! empty($indexIssues)) {
+                $issues[] = $this->formatIndexFailureMessage($indexIssues);
+            }
+        }
+
+        DB::flushQueryLog();
+
+        $this->assertEmpty(
+            $issues,
+            "Query efficiency issues detected:\n\n" . implode("\n\n---\n\n", $issues)
+        );
+    }
+
+    /**
      * Get the total execution time of all tracked queries in milliseconds.
      */
     public static function getTotalQueryTime(): float
@@ -291,14 +337,12 @@ trait AssertsQueryCounts
     {
         $driver = $this->getDriverName();
 
-        // Check custom analysers first
         foreach (self::$queryAnalysers as $analyser) {
             if ($analyser->supports($driver)) {
                 return $analyser;
             }
         }
 
-        // Fall back to built-in analysers
         $builtInAnalysers = [
             new MySQLAnalyser,
             new SQLiteAnalyser,
@@ -321,8 +365,6 @@ trait AssertsQueryCounts
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
-
-            // Create a unique key for this query+bindings combination
             $key = $sql . '|' . json_encode($bindings);
 
             if (! isset($seen[$key])) {
@@ -335,7 +377,6 @@ trait AssertsQueryCounts
             $seen[$key]['count']++;
         }
 
-        // Filter to only duplicates (count > 1)
         foreach ($seen as $key => $data) {
             if ($data['count'] > 1) {
                 self::$duplicateQueries[$key] = $data;
@@ -461,7 +502,6 @@ trait AssertsQueryCounts
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
 
-            // Only analyze SELECT queries
             if (! $this->isSelectQuery($sql)) {
                 continue;
             }
@@ -528,7 +568,6 @@ trait AssertsQueryCounts
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
 
-            // Only analyze SELECT queries
             if (! $this->isSelectQuery($sql)) {
                 continue;
             }
@@ -591,14 +630,19 @@ trait AssertsQueryCounts
     {
         self::$lazyLoadingViolations = [];
 
-        // Store original state using reflection
+        $this->withLazyLoadingTracking($closure);
+
+        return self::$lazyLoadingViolations;
+    }
+
+    private function withLazyLoadingTracking(Closure $closure): void
+    {
         $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
         $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
 
         $originalPrevention = $preventionProperty->getValue(null);
         $originalCallback = $callbackProperty->getValue(null);
 
-        // Enable lazy loading prevention with our collector
         Model::preventLazyLoading();
         Model::handleLazyLoadingViolationUsing(function (Model $model, string $relation): void {
             self::$lazyLoadingViolations[] = [
@@ -610,12 +654,9 @@ trait AssertsQueryCounts
         try {
             $closure();
         } finally {
-            // Restore original state
             $preventionProperty->setValue(null, $originalPrevention);
             $callbackProperty->setValue(null, $originalCallback);
         }
-
-        return self::$lazyLoadingViolations;
     }
 
     private function formatLazyLoadingFailureMessage(array $violations, ?string $prefix = null): string

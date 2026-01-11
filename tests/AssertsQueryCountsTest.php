@@ -21,13 +21,13 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
-    public function no_queries_are_logged_when_none_are_executed(): void
+    public function it_logs_no_queries_when_none_are_executed(): void
     {
         $this->assertNoQueriesExecuted();
     }
 
     #[Test]
-    public function queries_are_counted_when_executed(): void
+    public function it_counts_queries_when_executed(): void
     {
         DB::select('SELECT * FROM sqlite_master WHERE type = "table"');
 
@@ -118,7 +118,7 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
-    public function failure_message_includes_executed_queries(): void
+    public function it_includes_executed_queries_in_failure_message(): void
     {
         $this->executeQueries(3);
 
@@ -135,7 +135,7 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
-    public function failure_message_shows_no_queries_when_none_executed(): void
+    public function it_shows_no_queries_message_when_none_executed(): void
     {
         try {
             $this->assertQueryCountMatches(1);
@@ -164,7 +164,6 @@ class AssertsQueryCountsTest extends TestCase
     #[Test]
     public function it_fails_when_lazy_loading_is_detected(): void
     {
-        // Need multiple users - Laravel only enables lazy loading prevention when count > 1
         $user1 = User::create(['name' => 'John']);
         $user2 = User::create(['name' => 'Jane']);
         Post::create(['user_id' => $user1->id, 'title' => 'First Post']);
@@ -175,7 +174,6 @@ class AssertsQueryCountsTest extends TestCase
                 $users = User::all();
 
                 foreach ($users as $user) {
-                    // This triggers lazy loading (N+1)!
                     $user->posts->count();
                 }
             });
@@ -200,25 +198,19 @@ class AssertsQueryCountsTest extends TestCase
             $users = User::all();
 
             foreach ($users as $user) {
-                // Each user triggers one lazy load
                 $user->posts->count();
             }
         });
     }
 
     #[Test]
-    public function lazy_loading_detection_restores_original_state(): void
+    public function it_restores_lazy_loading_state_after_assertion(): void
     {
-        // Run lazy loading assertion
-        $this->assertNoLazyLoading(function () {
-            // No lazy loading here
-        });
+        $this->assertNoLazyLoading(function () {});
 
-        // After the assertion, lazy loading should work normally again
         $user = User::create(['name' => 'John']);
         Post::create(['user_id' => $user->id, 'title' => 'Post']);
 
-        // This should not throw - lazy loading prevention should be disabled
         $freshUser = User::first();
         $this->assertCount(1, $freshUser->posts);
     }
@@ -228,7 +220,6 @@ class AssertsQueryCountsTest extends TestCase
     {
         User::create(['name' => 'John']);
 
-        // Primary key lookup uses index
         $this->assertAllQueriesUseIndexes(function () {
             User::find(1);
         });
@@ -242,7 +233,6 @@ class AssertsQueryCountsTest extends TestCase
 
         try {
             $this->assertAllQueriesUseIndexes(function () {
-                // This does a full table scan (no index on 'name')
                 User::where('name', 'John')->get();
             });
             $this->fail('Expected assertion to fail');
@@ -260,23 +250,21 @@ class AssertsQueryCountsTest extends TestCase
     {
         User::create(['name' => 'John']);
 
-        // Using primary key - uses index
         $this->assertAllQueriesUseIndexes(function () {
             DB::select('SELECT * FROM users WHERE id = ?', [1]);
         });
     }
 
     #[Test]
-    public function index_assertion_ignores_non_select_queries(): void
+    public function it_ignores_non_select_queries_in_index_assertion(): void
     {
-        // INSERT queries should be ignored
         $this->assertAllQueriesUseIndexes(function () {
             User::create(['name' => 'John']);
         });
     }
 
     #[Test]
-    public function index_analysis_results_are_available_after_assertion(): void
+    public function it_provides_index_analysis_results_after_assertion(): void
     {
         User::create(['name' => 'John']);
 
@@ -296,7 +284,6 @@ class AssertsQueryCountsTest extends TestCase
     {
         try {
             $this->assertNoDuplicateQueries(function () {
-                // Same query executed twice
                 DB::select('SELECT 1');
                 DB::select('SELECT 1');
             });
@@ -321,12 +308,11 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
-    public function duplicate_detection_considers_bindings(): void
+    public function it_considers_bindings_in_duplicate_detection(): void
     {
         User::create(['name' => 'John']);
         User::create(['name' => 'Jane']);
 
-        // Different bindings = not duplicates
         $this->assertNoDuplicateQueries(function () {
             User::find(1);
             User::find(2);
@@ -354,7 +340,7 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
-    public function duplicate_queries_are_available_after_assertion(): void
+    public function it_provides_duplicate_queries_after_assertion(): void
     {
         try {
             $this->assertNoDuplicateQueries(function () {
@@ -362,7 +348,6 @@ class AssertsQueryCountsTest extends TestCase
                 DB::select('SELECT 1');
             });
         } catch (AssertionFailedError) {
-            // Expected
         }
 
         $duplicates = self::getDuplicateQueries();
@@ -376,7 +361,6 @@ class AssertsQueryCountsTest extends TestCase
     #[Test]
     public function it_can_assert_max_query_time(): void
     {
-        // Fast queries should pass with a generous threshold
         $this->assertMaxQueryTime(1000, function () {
             DB::select('SELECT 1');
             DB::select('SELECT 2');
@@ -386,7 +370,6 @@ class AssertsQueryCountsTest extends TestCase
     #[Test]
     public function it_can_assert_total_query_time(): void
     {
-        // Fast queries should pass with a generous threshold
         $this->assertTotalQueryTime(1000, function () {
             DB::select('SELECT 1');
             DB::select('SELECT 2');
@@ -395,7 +378,7 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
-    public function total_query_time_helper_returns_correct_value(): void
+    public function it_returns_total_query_time(): void
     {
         self::trackQueries();
 
@@ -404,12 +387,11 @@ class AssertsQueryCountsTest extends TestCase
 
         $totalTime = self::getTotalQueryTime();
 
-        // Time should be >= 0 (can't predict exact timing)
         $this->assertGreaterThanOrEqual(0, $totalTime);
     }
 
     #[Test]
-    public function max_query_time_fails_with_zero_threshold(): void
+    public function it_fails_max_query_time_with_zero_threshold(): void
     {
         try {
             $this->assertMaxQueryTime(0, function () {
@@ -423,7 +405,7 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
-    public function total_query_time_fails_with_zero_threshold(): void
+    public function it_fails_total_query_time_with_zero_threshold(): void
     {
         try {
             $this->assertTotalQueryTime(0, function () {
@@ -433,6 +415,115 @@ class AssertsQueryCountsTest extends TestCase
         } catch (AssertionFailedError $e) {
             $this->assertStringContainsString('exceeds budget of 0ms', $e->getMessage());
         }
+    }
+
+    #[Test]
+    public function it_can_assert_queries_are_efficient(): void
+    {
+        User::create(['name' => 'John']);
+        User::create(['name' => 'Jane']);
+
+        $this->assertQueriesAreEfficient(function () {
+            User::find(1);
+            User::find(2);
+        });
+    }
+
+    #[Test]
+    public function it_fails_efficient_queries_on_lazy_loading(): void
+    {
+        $user1 = User::create(['name' => 'John']);
+        $user2 = User::create(['name' => 'Jane']);
+        Post::create(['user_id' => $user1->id, 'title' => 'First Post']);
+        Post::create(['user_id' => $user2->id, 'title' => 'Second Post']);
+
+        try {
+            $this->assertQueriesAreEfficient(function () {
+                $users = User::all();
+
+                foreach ($users as $user) {
+                    $user->posts->count();
+                }
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Query efficiency issues detected', $message);
+            $this->assertStringContainsString('Lazy loading violations detected', $message);
+        }
+    }
+
+    #[Test]
+    public function it_fails_efficient_queries_on_duplicate_queries(): void
+    {
+        try {
+            $this->assertQueriesAreEfficient(function () {
+                DB::select('SELECT 1');
+                DB::select('SELECT 1');
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Query efficiency issues detected', $message);
+            $this->assertStringContainsString('Duplicate queries detected', $message);
+        }
+    }
+
+    #[Test]
+    public function it_fails_efficient_queries_on_missing_indexes(): void
+    {
+        User::create(['name' => 'John']);
+        User::create(['name' => 'Jane']);
+
+        try {
+            $this->assertQueriesAreEfficient(function () {
+                User::where('name', 'John')->get();
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Query efficiency issues detected', $message);
+            $this->assertStringContainsString('Full table scan', $message);
+        }
+    }
+
+    #[Test]
+    public function it_reports_multiple_efficiency_issues(): void
+    {
+        User::create(['name' => 'John']);
+
+        try {
+            $this->assertQueriesAreEfficient(function () {
+                User::where('name', 'John')->get();
+                User::where('name', 'John')->get();
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Query efficiency issues detected', $message);
+            $this->assertStringContainsString('Duplicate queries detected', $message);
+            $this->assertStringContainsString('Full table scan', $message);
+        }
+    }
+
+    #[Test]
+    public function it_restores_lazy_loading_state_after_efficient_queries_assertion(): void
+    {
+        User::create(['name' => 'John']);
+
+        $this->assertQueriesAreEfficient(function () {
+            User::find(1);
+        });
+
+        $user = User::create(['name' => 'Jane']);
+        Post::create(['user_id' => $user->id, 'title' => 'Post']);
+
+        $freshUser = User::find($user->id);
+        $this->assertCount(1, $freshUser->posts);
     }
 
     private function executeQueries(int $count): void
