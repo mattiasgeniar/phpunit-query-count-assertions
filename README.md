@@ -49,6 +49,9 @@ class YourTest extends TestCase
 All assertions accept an optional closure:
 
 ```php
+// No queries at all
+$this->assertNoQueriesExecuted(fn() => $this->getCachedData());
+
 // Exact count
 $this->assertQueryCountMatches(2, fn() => $this->loadUserWithPosts());
 
@@ -149,7 +152,7 @@ Violations:
 
 ## Index usage / full table scan detection
 
-Runs EXPLAIN on each query:
+Runs EXPLAIN on each query to detect performance issues:
 
 ```php
 $this->assertAllQueriesUseIndexes(function () {
@@ -169,18 +172,61 @@ Queries with index issues detected:
   1. SELECT * FROM users WHERE name = ?
      Bindings: ["John"]
      Issues:
-       - Full table scan on 'users'
+       - [ERROR] Full table scan on 'users'
 ```
 
-**Supported:** MySQL and SQLite. Other databases skip the assertion. PostgreSQL PRs welcome.
+### Supported databases
 
-**MySQL detects:**
+- **MySQL** (5.6+) - Full support with JSON EXPLAIN
+- **MariaDB** - Full support with tabular EXPLAIN
+- **SQLite** - Index analysis supported, row counting not available
+
+Other databases skip the assertion. See [Custom analysers](#custom-analysers) to add support for additional databases.
+
+### What gets analyzed
+
+Only queries that support EXPLAIN are analyzed:
+- SELECT queries
+- UPDATE queries
+- DELETE queries
+- INSERT...SELECT queries
+- REPLACE...SELECT queries
+
+Plain INSERT, CREATE, DROP, and other DDL statements are skipped.
+
+### Issue severity levels
+
+Issues are classified by severity and shown with prefixes in the output:
+
+| Severity | Prefix | Meaning |
+|----------|--------|---------|
+| Error | `[ERROR]` | Critical issues that almost always need fixing (full table scans, unused available indexes) |
+| Warning | `[WARNING]` | Potential issues that may be acceptable in some cases (filesort, temporary tables, full index scans) |
+| Info | `[INFO]` | Informational notes (low filter efficiency, co-routine usage) |
+
+By default, only errors and warnings cause assertion failures.
+
+### MySQL / MariaDB detects
+
 - Full table scans (`type=ALL`)
-- Available index not used
+- Full index scans (`type=index`)
+- Index available but not used
 - Using filesort
 - Using temporary tables
 - Using join buffer (missing index for joins)
 - Full scan on NULL key
+- Low filter efficiency (examining many rows, keeping few)
+- High query cost (when threshold configured)
+
+### SQLite detects
+
+- Full table scans (`SCAN table`)
+- Temporary B-tree usage for ORDER BY, DISTINCT, GROUP BY
+- Co-routine subqueries
+
+### Small table optimization
+
+Full table scans on tables with fewer than 100 rows are ignored by default, since scanning small tables is often faster than using an index. See [Configurable thresholds](#configurable-thresholds) to adjust this.
 
 ## Duplicate query detection
 
@@ -204,7 +250,7 @@ Duplicate queries detected:
 
 **Note:** Different bindings = different queries. `User::find(1)` and `User::find(2)` are unique.
 
-## Row count threshold (MySQL only)
+## Row count threshold (MySQL / MariaDB only)
 
 ```php
 $this->assertMaxRowsExamined(1000, function () {
@@ -222,7 +268,7 @@ Queries examining more than 1000 rows:
      Rows examined: 15000
 ```
 
-SQLite tests are skipped.
+SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion is skipped.
 
 ## Query timing assertions
 
@@ -327,14 +373,130 @@ class DashboardTest extends TestCase
 }
 ```
 
-## Helper methods
+## Configurable thresholds
+
+### MySQL analyser options
+
+The MySQL analyser has configurable thresholds that can be set by registering a customized instance:
 
 ```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
+
+class YourTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Flag full table scans only on tables with 500+ rows (default: 100)
+        self::registerQueryAnalyser(
+            (new MySQLAnalyser)->withMinRowsForScanWarning(500)
+        );
+
+        // Also flag queries with cost above threshold
+        self::registerQueryAnalyser(
+            (new MySQLAnalyser)
+                ->withMinRowsForScanWarning(500)
+                ->withMaxCost(1000.0)
+        );
+    }
+}
+```
+
+| Method | Default | Description |
+|--------|---------|-------------|
+| `withMinRowsForScanWarning(int)` | 100 | Minimum rows to flag a full table scan as an error |
+| `withMaxCost(float)` | null (disabled) | Maximum query cost before flagging as a warning |
+
+## Custom analysers
+
+Add support for additional databases by implementing the `QueryAnalyser` interface:
+
+```php
+use Illuminate\Database\Connection;
+use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
+use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
+use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\Concerns\ExplainsQueries;
+
+class PostgreSQLAnalyser implements QueryAnalyser
+{
+    use ExplainsQueries; // Provides canExplain() for SELECT, UPDATE, DELETE, INSERT...SELECT
+
+    public function supports(string $driver): bool
+    {
+        return $driver === 'pgsql';
+    }
+
+    public function explain(Connection $connection, string $sql, array $bindings): array
+    {
+        return $connection->select('EXPLAIN (FORMAT JSON) ' . $sql, $bindings);
+    }
+
+    public function analyzeIndexUsage(array $explainResults): array
+    {
+        $issues = [];
+
+        // Parse PostgreSQL EXPLAIN JSON output
+        // Look for "Seq Scan" nodes (full table scans)
+        // Return QueryIssue instances for problems found
+
+        return $issues;
+    }
+
+    public function supportsRowCounting(): bool
+    {
+        return true; // PostgreSQL provides row estimates
+    }
+
+    public function getRowsExamined(array $explainResults): int
+    {
+        // Sum up "Plan Rows" from EXPLAIN output
+        return 0;
+    }
+}
+```
+
+Register your custom analyser in your test's `setUp()`:
+
+```php
+protected function setUp(): void
+{
+    parent::setUp();
+
+    self::registerQueryAnalyser(new PostgreSQLAnalyser);
+}
+```
+
+Custom analysers are checked before the built-in MySQL and SQLite analysers.
+
+## Helper methods
+
+These methods let you inspect query data for custom assertions or debugging:
+
+```php
+// Get all executed queries with their SQL, bindings, and timing
 $queries = self::getQueriesExecuted();
+// Returns: [['query' => 'SELECT...', 'bindings' => [...], 'time' => 0.45], ...]
+
+// Get total number of queries executed
 $count = self::getQueryCount();
+
+// Get lazy loading violations from the last assertion
 $violations = self::getLazyLoadingViolations();
+// Returns: [['model' => 'App\Models\User', 'relation' => 'posts'], ...]
+
+// Get detailed EXPLAIN results from the last index analysis
 $results = self::getIndexAnalysisResults();
+// Returns: [['query' => '...', 'bindings' => [...], 'issues' => [...], 'explain' => [...]], ...]
+
+// Get duplicate queries from the last check
 $duplicates = self::getDuplicateQueries();
+// Returns: ['key' => ['count' => 2, 'query' => '...', 'bindings' => [...]], ...]
+
+// Get total query execution time in milliseconds
 $totalTime = self::getTotalQueryTime();
 ```
 

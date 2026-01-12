@@ -5,8 +5,10 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Enums\Severity;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
+use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\SQLiteAnalyser;
 use PDO;
 use ReflectionProperty;
@@ -14,6 +16,13 @@ use ReflectionProperty;
 trait AssertsQueryCounts
 {
     private static array $lazyLoadingViolations = [];
+
+    /**
+     * Snapshot of lazy loading state to restore after efficiency tracking.
+     *
+     * @var array{prevention: bool, callback: callable|null}|null
+     */
+    private static ?array $lazyLoadingState = null;
 
     private static array $indexAnalysisResults = [];
 
@@ -221,6 +230,7 @@ trait AssertsQueryCounts
     {
         $this->resetEfficiencyTracking();
         self::trackQueries();
+        $this->captureLazyLoadingState();
         $this->enableLazyLoadingTracking();
     }
 
@@ -233,63 +243,92 @@ trait AssertsQueryCounts
 
     private function enableLazyLoadingTracking(): void
     {
+        Model::preventLazyLoading();
+        Model::handleLazyLoadingViolationUsing($this->lazyLoadingViolationHandler());
+    }
+
+    private function captureLazyLoadingState(): void
+    {
+        if (self::$lazyLoadingState !== null) {
+            return;
+        }
+
         $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
         $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
 
-        $preventionProperty->setValue(null, true);
-        $callbackProperty->setValue(null, function (Model $model, string $relation): void {
+        self::$lazyLoadingState = [
+            'prevention' => $preventionProperty->getValue(null),
+            'callback' => $callbackProperty->getValue(null),
+        ];
+    }
+
+    private function restoreLazyLoadingState(): void
+    {
+        if (self::$lazyLoadingState === null) {
+            return;
+        }
+
+        $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
+        $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
+
+        $preventionProperty->setValue(null, self::$lazyLoadingState['prevention']);
+        $callbackProperty->setValue(null, self::$lazyLoadingState['callback']);
+        self::$lazyLoadingState = null;
+    }
+
+    private function lazyLoadingViolationHandler(): Closure
+    {
+        return function (Model $model, string $relation): void {
             self::$lazyLoadingViolations[] = [
                 'model' => $model::class,
                 'relation' => $relation,
             ];
-        });
+        };
     }
 
     public function assertQueriesAreEfficient(?Closure $closure = null): void
     {
-        if ($closure !== null) {
-            $this->resetEfficiencyTracking();
-            self::trackQueries();
-            $this->withLazyLoadingTracking($closure);
-        }
-
-        $queries = self::getQueriesExecuted();
-        $issues = [];
-
-        if (! empty(self::$lazyLoadingViolations)) {
-            $issues[] = $this->formatLazyLoadingFailureMessage(self::$lazyLoadingViolations);
-        }
-
-        $duplicates = $this->findDuplicateQueries($queries);
-        if (! empty($duplicates)) {
-            $issues[] = $this->formatDuplicateQueryFailureMessage($duplicates);
-        }
-
-        $analyser = $this->getQueryAnalyser();
-        if ($analyser !== null) {
-            $indexIssues = $this->analyzeQueriesForIndexUsage($queries);
-            if (! empty($indexIssues)) {
-                $issues[] = $this->formatIndexFailureMessage($indexIssues);
+        try {
+            if ($closure !== null) {
+                $this->resetEfficiencyTracking();
+                self::trackQueries();
+                $this->withLazyLoadingTracking($closure);
             }
+
+            $queries = self::getQueriesExecuted();
+            $issues = [];
+
+            if (! empty(self::$lazyLoadingViolations)) {
+                $issues[] = $this->formatLazyLoadingFailureMessage(self::$lazyLoadingViolations);
+            }
+
+            $duplicates = $this->findDuplicateQueries($queries);
+            if (! empty($duplicates)) {
+                $issues[] = $this->formatDuplicateQueryFailureMessage($duplicates);
+            }
+
+            $analyser = $this->getQueryAnalyser();
+            if ($analyser !== null) {
+                $indexIssues = $this->analyzeQueriesForIndexUsage($queries);
+                if (! empty($indexIssues)) {
+                    $issues[] = $this->formatIndexFailureMessage($indexIssues);
+                }
+            }
+
+            DB::flushQueryLog();
+
+            $this->assertEmpty(
+                $issues,
+                "Query efficiency issues detected:\n\n" . implode("\n\n---\n\n", $issues)
+            );
+        } finally {
+            $this->restoreLazyLoadingState();
         }
-
-        DB::flushQueryLog();
-
-        $this->assertEmpty(
-            $issues,
-            "Query efficiency issues detected:\n\n" . implode("\n\n---\n\n", $issues)
-        );
     }
 
     public static function getTotalQueryTime(): float
     {
-        $total = 0.0;
-
-        foreach (self::getQueriesExecuted() as $query) {
-            $total += $query['time'] ?? 0;
-        }
-
-        return $total;
+        return array_sum(array_column(self::getQueriesExecuted(), 'time'));
     }
 
     /**
@@ -316,18 +355,13 @@ trait AssertsQueryCounts
     {
         $driver = $this->getDriverName();
 
-        foreach (self::$queryAnalysers as $analyser) {
-            if ($analyser->supports($driver)) {
-                return $analyser;
-            }
-        }
-
-        $builtInAnalysers = [
+        $analysers = [
+            ...self::$queryAnalysers,
             new MySQLAnalyser,
             new SQLiteAnalyser,
         ];
 
-        foreach ($builtInAnalysers as $analyser) {
+        foreach ($analysers as $analyser) {
             if ($analyser->supports($driver)) {
                 return $analyser;
             }
@@ -433,13 +467,7 @@ trait AssertsQueryCounts
 
     private function calculateTotalQueryTime(array $queries): float
     {
-        $total = 0.0;
-
-        foreach ($queries as $query) {
-            $total += $query['time'] ?? 0;
-        }
-
-        return $total;
+        return array_sum(array_column($queries, 'time'));
     }
 
     private function formatTotalTimeFailureMessage(array $queries, float $totalTime, float $maxMilliseconds): string
@@ -481,7 +509,7 @@ trait AssertsQueryCounts
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
 
-            if (! $this->isSelectQuery($sql)) {
+            if (! $analyser->canExplain($sql)) {
                 continue;
             }
 
@@ -526,9 +554,10 @@ trait AssertsQueryCounts
     /**
      * Analyze queries for index usage.
      *
-     * @return array<int, array{query: string, bindings: array, issues: array, explain: array}>
+     * @param  Severity  $minSeverity  Minimum severity level to report
+     * @return array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, explain: array}>
      */
-    private function analyzeQueriesForIndexUsage(array $queries): array
+    private function analyzeQueriesForIndexUsage(array $queries, Severity $minSeverity = Severity::Warning): array
     {
         $analyser = $this->getQueryAnalyser();
 
@@ -547,12 +576,18 @@ trait AssertsQueryCounts
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
 
-            if (! $this->isSelectQuery($sql)) {
+            if (! $analyser->canExplain($sql)) {
                 continue;
             }
 
             $explainResults = $analyser->explain($connection, $sql, $bindings);
             $queryIssues = $analyser->analyzeIndexUsage($explainResults);
+
+            // Filter by severity
+            $filteredIssues = array_filter(
+                $queryIssues,
+                fn (QueryIssue $issue) => $issue->meetsThreshold($minSeverity)
+            );
 
             self::$indexAnalysisResults[] = [
                 'query' => $sql,
@@ -561,11 +596,11 @@ trait AssertsQueryCounts
                 'explain' => $explainResults,
             ];
 
-            if (! empty($queryIssues)) {
+            if (! empty($filteredIssues)) {
                 $issues[] = [
                     'query' => $sql,
                     'bindings' => $bindings,
-                    'issues' => $queryIssues,
+                    'issues' => $filteredIssues,
                 ];
             }
         }
@@ -573,11 +608,9 @@ trait AssertsQueryCounts
         return $issues;
     }
 
-    private function isSelectQuery(string $sql): bool
-    {
-        return stripos(trim($sql), 'select') === 0;
-    }
-
+    /**
+     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>}>  $issues
+     */
     private function formatIndexFailureMessage(array $issues): string
     {
         if (empty($issues)) {
@@ -597,8 +630,9 @@ trait AssertsQueryCounts
             }
 
             $message .= "\n     Issues:";
-            foreach ($issue['issues'] as $issueDetail) {
-                $message .= "\n       - {$issueDetail}";
+            foreach ($issue['issues'] as $queryIssue) {
+                $severityLabel = strtoupper($queryIssue->severity->value);
+                $message .= "\n       - [{$severityLabel}] {$queryIssue}";
             }
         }
 
@@ -623,12 +657,7 @@ trait AssertsQueryCounts
         $originalCallback = $callbackProperty->getValue(null);
 
         Model::preventLazyLoading();
-        Model::handleLazyLoadingViolationUsing(function (Model $model, string $relation): void {
-            self::$lazyLoadingViolations[] = [
-                'model' => $model::class,
-                'relation' => $relation,
-            ];
-        });
+        Model::handleLazyLoadingViolationUsing($this->lazyLoadingViolationHandler());
 
         try {
             $closure();

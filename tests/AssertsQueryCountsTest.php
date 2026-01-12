@@ -2,12 +2,14 @@
 
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Fixtures\Post;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Fixtures\User;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\Test;
+use ReflectionProperty;
 
 class AssertsQueryCountsTest extends TestCase
 {
@@ -524,6 +526,25 @@ class AssertsQueryCountsTest extends TestCase
 
         $freshUser = User::find($user->id);
         $this->assertCount(1, $freshUser->posts);
+    }
+
+    #[Test]
+    public function it_restores_lazy_loading_state_after_efficiency_tracking(): void
+    {
+        $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
+        $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
+
+        $originalPrevention = $preventionProperty->getValue(null);
+        $originalCallback = $callbackProperty->getValue(null);
+
+        $this->trackQueriesForEfficiency();
+
+        User::create(['name' => 'John']);
+
+        $this->assertQueriesAreEfficient();
+
+        $this->assertSame($originalPrevention, $preventionProperty->getValue(null));
+        $this->assertSame($originalCallback, $callbackProperty->getValue(null));
     }
 
     private function executeQueries(int $count): void
