@@ -223,6 +223,10 @@ By default, only errors and warnings cause assertion failures.
 - Full table scans (`SCAN table`)
 - Temporary B-tree usage for ORDER BY, DISTINCT, GROUP BY
 - Co-routine subqueries
+- **FK constraint checks** - When a DELETE/UPDATE triggers scans on related tables, the message includes FK details:
+  ```
+  [WARNING] Full table scan on 'posts' (FK constraint check: posts.user_id → users.id (ON DELETE CASCADE))
+  ```
 
 ### Small table optimization
 
@@ -476,13 +480,14 @@ class PostgreSQLAnalyser implements QueryAnalyser
         return $connection->select('EXPLAIN (FORMAT JSON) ' . $sql, $bindings);
     }
 
-    public function analyzeIndexUsage(array $explainResults): array
+    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array
     {
         $issues = [];
 
         // Parse PostgreSQL EXPLAIN JSON output
         // Look for "Seq Scan" nodes (full table scans)
         // Return QueryIssue instances for problems found
+        // Use $sql to detect FK constraint checks (see SQLiteAnalyser for example)
 
         return $issues;
     }
