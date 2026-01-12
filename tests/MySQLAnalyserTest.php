@@ -5,8 +5,9 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 use Illuminate\Database\Connection;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
 
-class MySQLAnalyserTest extends \PHPUnit\Framework\TestCase
+class MySQLAnalyserTest extends TestCase
 {
     #[Test]
     public function it_analyzes_json_explain_results(): void
@@ -78,7 +79,7 @@ class MySQLAnalyserTest extends \PHPUnit\Framework\TestCase
         $explainCalls = 0;
 
         $connection->method('selectOne')
-            ->willReturnCallback(function (string $query, array $bindings = []) use (&$versionCalls, &$explainCalls) {
+            ->willReturnCallback(function (string $query, array $_bindings = []) use (&$versionCalls, &$explainCalls) {
                 if (str_starts_with($query, 'SELECT VERSION()')) {
                     $versionCalls++;
 

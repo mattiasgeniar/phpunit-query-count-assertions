@@ -43,6 +43,9 @@ class MySQLAnalyser implements QueryAnalyser
         return $this->explainTabular($connection, $sql, $bindings);
     }
 
+    /**
+     * @return array<int, QueryIssue>
+     */
     public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array
     {
         if (isset($explainResults['query_block'])) {
@@ -218,21 +221,13 @@ class MySQLAnalyser implements QueryAnalyser
         // Full table scan
         if ($accessType === 'ALL') {
             if ($rows === null || $rows >= $this->minRowsForScanWarning) {
-                $issues[] = QueryIssue::error(
-                    message: "Full table scan on '{$table}'",
-                    table: $table,
-                    estimatedRows: $rows,
-                );
+                $issues[] = $this->fullTableScanIssue($table, $rows);
             }
         }
 
         // Full index scan (reads all index entries - often suboptimal)
         if ($accessType === 'index') {
-            $issues[] = QueryIssue::warning(
-                message: "Full index scan on '{$table}'",
-                table: $table,
-                estimatedRows: $rows,
-            );
+            $issues[] = $this->fullIndexScanIssue($table, $rows);
         }
 
         // Index available but not used
@@ -325,21 +320,13 @@ class MySQLAnalyser implements QueryAnalyser
         // Full table scan
         if ($type === 'ALL') {
             if ($rows === null || $rows >= $this->minRowsForScanWarning) {
-                $issues[] = QueryIssue::error(
-                    message: "Full table scan on '{$table}'",
-                    table: $table,
-                    estimatedRows: $rows,
-                );
+                $issues[] = $this->fullTableScanIssue($table, $rows);
             }
         }
 
         // Full index scan
         if ($type === 'index') {
-            $issues[] = QueryIssue::warning(
-                message: "Full index scan on '{$table}'",
-                table: $table,
-                estimatedRows: $rows,
-            );
+            $issues[] = $this->fullIndexScanIssue($table, $rows);
         }
 
         // Index available but not used

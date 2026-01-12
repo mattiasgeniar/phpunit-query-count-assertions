@@ -8,13 +8,44 @@ trait ExplainsQueries
 {
     public function canExplain(string $sql): bool
     {
-        $sql = strtolower(trim($sql));
+        $type = $this->extractQueryType($sql);
 
-        return str_starts_with($sql, 'select')
-            || str_starts_with($sql, 'delete')
-            || str_starts_with($sql, 'update')
-            || (str_starts_with($sql, 'insert') && str_contains($sql, 'select'))
-            || (str_starts_with($sql, 'replace') && str_contains($sql, 'select'));
+        return match ($type) {
+            'SELECT', 'DELETE', 'UPDATE' => true,
+            'INSERT', 'REPLACE' => str_contains(strtolower($sql), 'select'),
+            default => false,
+        };
+    }
+
+    protected function extractQueryType(?string $sql): ?string
+    {
+        if ($sql === null) {
+            return null;
+        }
+
+        if (preg_match('/^\s*(\w+)/i', $sql, $matches)) {
+            return strtoupper($matches[1]);
+        }
+
+        return null;
+    }
+
+    protected function fullTableScanIssue(string $table, ?int $estimatedRows = null): QueryIssue
+    {
+        return QueryIssue::error(
+            message: "Full table scan on '{$table}'",
+            table: $table,
+            estimatedRows: $estimatedRows,
+        );
+    }
+
+    protected function fullIndexScanIssue(string $table, ?int $estimatedRows = null): QueryIssue
+    {
+        return QueryIssue::warning(
+            message: "Full index scan on '{$table}'",
+            table: $table,
+            estimatedRows: $estimatedRows,
+        );
     }
 
     /**

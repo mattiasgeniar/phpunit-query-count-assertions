@@ -79,22 +79,6 @@ class SQLiteAnalyser implements QueryAnalyser
     }
 
     /**
-     * Extract the query type (DELETE, UPDATE, SELECT, etc.).
-     */
-    protected function extractQueryType(?string $sql): ?string
-    {
-        if ($sql === null) {
-            return null;
-        }
-
-        if (preg_match('/^\s*(\w+)/i', $sql, $matches)) {
-            return strtoupper($matches[1]);
-        }
-
-        return null;
-    }
-
-    /**
      * Get foreign key information for a table that references the target table.
      *
      * @return array<int, array{from: string, to: string, on_delete: string, on_update: string}>
@@ -147,20 +131,10 @@ class SQLiteAnalyser implements QueryAnalyser
                 return $issues;
             }
 
-            // Check if this is a FK constraint check on a different table
-            if ($this->isForeignKeyConstraintCheck($scannedTable, $targetTable, $queryType)) {
-                $issues[] = $this->createForeignKeyIssue(
-                    $scannedTable,
-                    $targetTable,
-                    $queryType,
-                    $connection
-                );
-            } else {
-                $issues[] = QueryIssue::error(
-                    message: "Full table scan on '{$scannedTable}'",
-                    table: $scannedTable,
-                );
-            }
+            // Create appropriate issue based on whether this is a FK constraint check
+            $issues[] = $this->isForeignKeyConstraintCheck($scannedTable, $targetTable, $queryType)
+                ? $this->createForeignKeyIssue($scannedTable, $targetTable, $queryType, $connection)
+                : $this->fullTableScanIssue($scannedTable);
         }
 
         // Check for temporary B-tree usage
