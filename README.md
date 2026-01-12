@@ -269,6 +269,114 @@ Queries executed:
   3. [275.98ms] SELECT COUNT(*) FROM analytics
 ```
 
+## All-in-one efficiency assertion
+
+Bundle common performance checks into a single assertion with `assertQueriesAreEfficient()`. This checks for:
+- No lazy loading (N+1) violations
+- No duplicate queries
+- All queries use indexes (no full table scans)
+
+### With a closure (simplest)
+
+```php
+$this->assertQueriesAreEfficient(function () {
+    $users = User::with('posts')->get();
+
+    foreach ($users as $user) {
+        $user->posts->count();
+    }
+});
+```
+
+### Pest: Using beforeEach()
+
+For tests where you need to track queries across the entire test method:
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+
+uses(AssertsQueryCounts::class);
+
+beforeEach(function () {
+    $this->trackQueriesForEfficiency();
+});
+
+it('loads the dashboard efficiently', function () {
+    $this->get('/dashboard');
+
+    $this->assertQueriesAreEfficient();
+});
+
+it('processes orders without N+1', function () {
+    $order = Order::factory()->create();
+
+    $this->post("/orders/{$order->id}/process");
+
+    $this->assertQueriesAreEfficient();
+});
+```
+
+### PHPUnit: Using setUp()
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+use Tests\TestCase;
+
+class DashboardTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->trackQueriesForEfficiency();
+    }
+
+    public function test_dashboard_loads_efficiently(): void
+    {
+        $this->get('/dashboard');
+
+        $this->assertQueriesAreEfficient();
+    }
+
+    public function test_order_processing_has_no_n_plus_one(): void
+    {
+        $order = Order::factory()->create();
+
+        $this->post("/orders/{$order->id}/process");
+
+        $this->assertQueriesAreEfficient();
+    }
+}
+```
+
+When issues are detected, you'll see a combined report:
+
+```
+Query efficiency issues detected:
+
+Lazy loading violations detected:
+Violations:
+  1. App\Models\Order::$items
+
+---
+
+Duplicate queries detected:
+
+  1. Executed 3 times: SELECT * FROM products WHERE id = ?
+     Bindings: [1]
+
+---
+
+Queries with index issues detected:
+
+  1. SELECT * FROM orders WHERE status = ?
+     Bindings: ["pending"]
+     Issues:
+       - Full table scan on 'orders'
+```
+
 ## Helper methods
 
 ```php
