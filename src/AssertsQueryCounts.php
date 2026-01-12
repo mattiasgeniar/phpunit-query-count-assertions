@@ -111,9 +111,6 @@ trait AssertsQueryCounts
         );
     }
 
-    /**
-     * Assert that lazy loading occurs a specific number of times within the closure.
-     */
     public function assertLazyLoadingCount(int $expectedCount, Closure $closure): void
     {
         $violations = $this->collectLazyLoadingViolations($closure);
@@ -167,12 +164,6 @@ trait AssertsQueryCounts
         return self::$indexAnalysisResults;
     }
 
-    /**
-     * Assert that no query examines more than the specified number of rows.
-     *
-     * Runs EXPLAIN on each query and checks the estimated rows examined.
-     * Only supported on databases where the analyser supports row counting.
-     */
     public function assertMaxRowsExamined(int $maxRows, ?Closure $closure = null): void
     {
         $this->withQueryTracking($closure, function () use ($maxRows) {
@@ -186,11 +177,6 @@ trait AssertsQueryCounts
         });
     }
 
-    /**
-     * Assert that no duplicate queries are executed.
-     *
-     * Detects when the exact same query (with same bindings) is executed multiple times.
-     */
     public function assertNoDuplicateQueries(?Closure $closure = null): void
     {
         $this->withQueryTracking($closure, function () {
@@ -204,11 +190,6 @@ trait AssertsQueryCounts
         });
     }
 
-    /**
-     * Assert that no single query exceeds the specified execution time.
-     *
-     * @param  float  $maxMilliseconds  Maximum allowed time for any single query
-     */
     public function assertMaxQueryTime(float $maxMilliseconds, ?Closure $closure = null): void
     {
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
@@ -222,11 +203,6 @@ trait AssertsQueryCounts
         });
     }
 
-    /**
-     * Assert that total query execution time doesn't exceed the specified budget.
-     *
-     * @param  float  $maxMilliseconds  Maximum allowed total time for all queries
-     */
     public function assertTotalQueryTime(float $maxMilliseconds, ?Closure $closure = null): void
     {
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
@@ -241,23 +217,41 @@ trait AssertsQueryCounts
         });
     }
 
-    /**
-     * Assert that queries are efficient: no N+1, no duplicates, and all use indexes.
-     *
-     * Bundles common query performance checks into a single assertion:
-     * - No lazy loading (N+1) violations
-     * - No duplicate queries (same query executed multiple times)
-     * - All queries use indexes (no full table scans)
-     */
-    public function assertQueriesAreEfficient(Closure $closure): void
+    public function trackQueriesForEfficiency(): void
+    {
+        $this->resetEfficiencyTracking();
+        self::trackQueries();
+        $this->enableLazyLoadingTracking();
+    }
+
+    private function resetEfficiencyTracking(): void
     {
         self::$lazyLoadingViolations = [];
         self::$duplicateQueries = [];
         self::$indexAnalysisResults = [];
+    }
 
-        self::trackQueries();
+    private function enableLazyLoadingTracking(): void
+    {
+        $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
+        $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
 
-        $this->withLazyLoadingTracking($closure);
+        $preventionProperty->setValue(null, true);
+        $callbackProperty->setValue(null, function (Model $model, string $relation): void {
+            self::$lazyLoadingViolations[] = [
+                'model' => $model::class,
+                'relation' => $relation,
+            ];
+        });
+    }
+
+    public function assertQueriesAreEfficient(?Closure $closure = null): void
+    {
+        if ($closure !== null) {
+            $this->resetEfficiencyTracking();
+            self::trackQueries();
+            $this->withLazyLoadingTracking($closure);
+        }
 
         $queries = self::getQueriesExecuted();
         $issues = [];
@@ -287,15 +281,11 @@ trait AssertsQueryCounts
         );
     }
 
-    /**
-     * Get the total execution time of all tracked queries in milliseconds.
-     */
     public static function getTotalQueryTime(): float
     {
-        $queries = self::getQueriesExecuted();
         $total = 0.0;
 
-        foreach ($queries as $query) {
+        foreach (self::getQueriesExecuted() as $query) {
             $total += $query['time'] ?? 0;
         }
 
@@ -312,27 +302,16 @@ trait AssertsQueryCounts
         return self::$duplicateQueries;
     }
 
-    /**
-     * Register a custom query analyser.
-     *
-     * Use this to add support for additional database drivers.
-     */
     public static function registerQueryAnalyser(QueryAnalyser $analyser): void
     {
         self::$queryAnalysers[] = $analyser;
     }
 
-    /**
-     * Get the current database driver name.
-     */
     private function getDriverName(): string
     {
         return DB::connection()->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
     }
 
-    /**
-     * Get the query analyser for the current database driver.
-     */
     private function getQueryAnalyser(): ?QueryAnalyser
     {
         $driver = $this->getDriverName();

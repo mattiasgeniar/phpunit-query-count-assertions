@@ -26,10 +26,18 @@ class SQLiteAnalyser implements QueryAnalyser
 
             // SQLite EXPLAIN QUERY PLAN output:
             // "SCAN users" = full table scan (bad)
+            // "SCAN CONSTANT ROW" = constant expression optimization (good, not a real table)
             // "SEARCH users USING INDEX" = using index (good)
             // "SEARCH users USING INTEGER PRIMARY KEY" = using primary key (good)
             if (preg_match('/^SCAN (\w+)/', $detail, $matches)) {
                 $table = $matches[1];
+
+                // CONSTANT is not a real table - it's SQLite's optimization for
+                // constant expressions (e.g., EXISTS subqueries, scalar subqueries)
+                if (strcasecmp($table, 'CONSTANT') === 0) {
+                    continue;
+                }
+
                 $issues[] = "Full table scan on '{$table}'";
             }
         }
