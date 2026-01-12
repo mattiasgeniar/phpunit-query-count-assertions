@@ -11,7 +11,7 @@ class MySQLAnalyserTest extends \PHPUnit\Framework\TestCase
     #[Test]
     public function it_analyzes_json_explain_results(): void
     {
-        $analyser = new MySQLAnalyser();
+        $analyser = new MySQLAnalyser;
 
         $explain = [
             'query_block' => [
@@ -40,7 +40,7 @@ class MySQLAnalyserTest extends \PHPUnit\Framework\TestCase
     #[Test]
     public function it_counts_rows_from_json_explain(): void
     {
-        $analyser = new MySQLAnalyser();
+        $analyser = new MySQLAnalyser;
 
         $explain = [
             'query_block' => [
@@ -71,7 +71,7 @@ class MySQLAnalyserTest extends \PHPUnit\Framework\TestCase
     #[Test]
     public function it_memoizes_json_explain_support_by_connection(): void
     {
-        $analyser = new MySQLAnalyser();
+        $analyser = new MySQLAnalyser;
 
         $connection = $this->createMock(Connection::class);
         $versionCalls = 0;
