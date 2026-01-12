@@ -373,6 +373,47 @@ class DashboardTest extends TestCase
 }
 ```
 
+### Paranoid mode (automatic checks on every test)
+
+Want to automatically check every test for query efficiency issues? You can use `afterEach()` hooks to run assertions globally. This is aggressive and may surface many issues - use with caution.
+
+**Pest (in `tests/Pest.php`):**
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+
+pest()->extend(Tests\TestCase::class)
+    ->use(AssertsQueryCounts::class)
+    ->beforeEach(fn () => $this->trackQueriesForEfficiency())
+    ->afterEach(fn () => $this->assertQueriesAreEfficient())
+    ->in('Feature');
+```
+
+**PHPUnit (base test class):**
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+
+abstract class TestCase extends BaseTestCase
+{
+    use AssertsQueryCounts;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->trackQueriesForEfficiency();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->assertQueriesAreEfficient();
+        parent::tearDown();
+    }
+}
+```
+
+This will fail any test that has N+1 queries, duplicate queries, or missing indexes. Consider starting with a subset of tests rather than your entire suite.
+
 ## Configurable thresholds
 
 ### MySQL analyser options
