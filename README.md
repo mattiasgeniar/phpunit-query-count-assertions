@@ -5,9 +5,9 @@
 [![Tests](https://img.shields.io/github/actions/workflow/status/mattiasgeniar/phpunit-query-count-assertions/run-tests.yml?branch=master&label=tests&style=flat-square)](https://github.com/mattiasgeniar/phpunit-query-count-assertions/actions/workflows/run-tests.yml)
 [![PHP Version](https://img.shields.io/packagist/php-v/mattiasgeniar/phpunit-query-count-assertions.svg?style=flat-square)](https://packagist.org/packages/mattiasgeniar/phpunit-query-count-assertions)
 
-A custom assertion for phpunit that allows you to count the number of SQL queries used in a test. Can be used to enforce certain performance characteristics (ie: limit queries to X for a certain action).
+Count and assert SQL queries in your tests. Catch N+1 problems, full table scans, duplicate queries, and slow queries before they hit production.
 
-This works for Laravel only at the moment.
+Laravel only.
 
 ## Requirements
 
@@ -25,7 +25,7 @@ composer require --dev mattiasgeniar/phpunit-query-count-assertions
 
 ## Usage
 
-Add the `AssertsQueryCounts` trait to your test-class and wrap your code in a closure - no additional setup required:
+Add the trait, wrap your code in a closure:
 
 ```php
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
@@ -46,7 +46,7 @@ class YourTest extends TestCase
 
 ## Available assertions
 
-All assertions accept an optional closure. When provided, only queries within the closure are counted:
+All assertions accept an optional closure:
 
 ```php
 // Exact count
@@ -66,7 +66,7 @@ $this->assertQueryCountBetween(3, 7, fn() => $this->complexOperation());
 
 ## Tracking queries across the entire test
 
-If you need to count queries outside of closures (e.g., counting queries across multiple method calls), initialize tracking in `setUp()`:
+If you need to count queries outside closures, initialize tracking in `setUp()`:
 
 ```php
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
@@ -94,7 +94,7 @@ class YourTest extends TestCase
 
 ## Failure messages
 
-When an assertion fails, you'll see the actual queries that were executed:
+Failed assertions show you the actual queries:
 
 ```
 Expected 1 queries, got 3.
@@ -109,34 +109,34 @@ Queries executed:
 
 ## Lazy loading / N+1 detection
 
-Detect N+1 query problems by leveraging Laravel's built-in lazy loading prevention:
+Uses Laravel's built-in lazy loading prevention:
 
 ```php
-// Fails if any lazy loading occurs (N+1 detected)
+// Fails if any lazy loading occurs
 $this->assertNoLazyLoading(function () {
     $users = User::all();
 
     foreach ($users as $user) {
-        $user->posts->count(); // N+1! This will fail
+        $user->posts->count(); // N+1 query
     }
 });
 
-// Passes - using eager loading
+// Passes with eager loading
 $this->assertNoLazyLoading(function () {
     $users = User::with('posts')->get();
 
     foreach ($users as $user) {
-        $user->posts->count(); // Already loaded, no N+1
+        $user->posts->count();
     }
 });
 
-// Assert specific number of lazy loading violations
+// Assert specific number of violations
 $this->assertLazyLoadingCount(2, function () {
-    // Expect exactly 2 lazy loads
+    // ...
 });
 ```
 
-When a lazy loading violation is detected, you'll see which relations were lazy loaded:
+Output:
 
 ```
 Lazy loading violations detected:
@@ -145,26 +145,23 @@ Violations:
   2. App\Models\User::$posts
 ```
 
-**Note:** Laravel only triggers lazy loading prevention when loading multiple models. A single model fetch won't trigger violations.
+**Note:** Laravel only triggers this when loading multiple models. Single model fetches won't trigger violations.
 
 ## Index usage / full table scan detection
 
-Detect queries that don't use indexes by running EXPLAIN on each query:
+Runs EXPLAIN on each query:
 
 ```php
-// Fails if any query does a full table scan
 $this->assertAllQueriesUseIndexes(function () {
-    // This uses the primary key index - passes
-    User::find(1);
+    User::find(1); // Uses primary key, passes
 });
 
 $this->assertAllQueriesUseIndexes(function () {
-    // This does a full table scan - fails!
-    User::where('name', 'John')->get();
+    User::where('name', 'John')->get(); // Full table scan, fails
 });
 ```
 
-When a full table scan is detected, you'll see which queries have issues:
+Output:
 
 ```
 Queries with index issues detected:
@@ -175,9 +172,9 @@ Queries with index issues detected:
        - Full table scan on 'users'
 ```
 
-**Supported databases:** MySQL and SQLite. Other databases will skip the assertion. PostgreSQL support welcome via PR.
+**Supported:** MySQL and SQLite. Other databases skip the assertion. PostgreSQL PRs welcome.
 
-**MySQL-specific detection:**
+**MySQL detects:**
 - Full table scans (`type=ALL`)
 - Available index not used
 - Using filesort
@@ -187,16 +184,16 @@ Queries with index issues detected:
 
 ## Duplicate query detection
 
-Detect when the same query is executed multiple times (potential caching opportunity):
+Same query executed multiple times? You'll know:
 
 ```php
 $this->assertNoDuplicateQueries(function () {
     User::find(1);
-    User::find(1); // Duplicate! Should cache or refactor
+    User::find(1); // Duplicate
 });
 ```
 
-When duplicates are found:
+Output:
 
 ```
 Duplicate queries detected:
@@ -205,20 +202,17 @@ Duplicate queries detected:
      Bindings: [1]
 ```
 
-**Note:** Queries with different bindings are not considered duplicates. `User::find(1)` and `User::find(2)` are unique queries.
+**Note:** Different bindings = different queries. `User::find(1)` and `User::find(2)` are unique.
 
 ## Row count threshold (MySQL only)
 
-Assert that queries don't examine too many rows:
-
 ```php
-// Fails if any query examines more than 1000 rows
 $this->assertMaxRowsExamined(1000, function () {
     User::where('status', 'active')->get();
 });
 ```
 
-When the threshold is exceeded:
+Output:
 
 ```
 Queries examining more than 1000 rows:
@@ -228,19 +222,17 @@ Queries examining more than 1000 rows:
      Rows examined: 15000
 ```
 
-**Note:** This assertion only works on MySQL. SQLite tests will be skipped.
+SQLite tests are skipped.
 
 ## Query timing assertions
 
-Enforce performance budgets by asserting query execution times:
-
 ```php
-// Fail if any single query takes longer than 100ms
+// No single query over 100ms
 $this->assertMaxQueryTime(100, function () {
     User::with('posts', 'comments')->get();
 });
 
-// Fail if total query time exceeds 500ms budget
+// Total time under 500ms
 $this->assertTotalQueryTime(500, function () {
     $users = User::all();
     $posts = Post::where('published', true)->get();
@@ -248,7 +240,7 @@ $this->assertTotalQueryTime(500, function () {
 });
 ```
 
-When a query exceeds the threshold:
+Output:
 
 ```
 Queries exceeding 100ms:
@@ -258,25 +250,11 @@ Queries exceeding 100ms:
      Bindings: [true]
 ```
 
-When total time exceeds budget:
+## Combined efficiency assertion
 
-```
-Total query time 623.45ms exceeds budget of 500ms.
-Queries executed:
-  1. [245.32ms] SELECT * FROM users
-  2. [102.15ms] SELECT * FROM posts WHERE published = ?
-      Bindings: [true]
-  3. [275.98ms] SELECT COUNT(*) FROM analytics
-```
+`assertQueriesAreEfficient()` checks everything at once: N+1, duplicates, and missing indexes.
 
-## All-in-one efficiency assertion
-
-Bundle common performance checks into a single assertion with `assertQueriesAreEfficient()`. This checks for:
-- No lazy loading (N+1) violations
-- No duplicate queries
-- All queries use indexes (no full table scans)
-
-### With a closure (simplest)
+### With a closure
 
 ```php
 $this->assertQueriesAreEfficient(function () {
@@ -288,9 +266,7 @@ $this->assertQueriesAreEfficient(function () {
 });
 ```
 
-### Pest: Using beforeEach()
-
-For tests where you need to track queries across the entire test method:
+### Pest: beforeEach()
 
 ```php
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
@@ -316,7 +292,7 @@ it('processes orders without N+1', function () {
 });
 ```
 
-### PHPUnit: Using setUp()
+### PHPUnit: setUp()
 
 ```php
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
@@ -351,51 +327,14 @@ class DashboardTest extends TestCase
 }
 ```
 
-When issues are detected, you'll see a combined report:
-
-```
-Query efficiency issues detected:
-
-Lazy loading violations detected:
-Violations:
-  1. App\Models\Order::$items
-
----
-
-Duplicate queries detected:
-
-  1. Executed 3 times: SELECT * FROM products WHERE id = ?
-     Bindings: [1]
-
----
-
-Queries with index issues detected:
-
-  1. SELECT * FROM orders WHERE status = ?
-     Bindings: ["pending"]
-     Issues:
-       - Full table scan on 'orders'
-```
-
 ## Helper methods
 
 ```php
-// Get all executed queries as an array
 $queries = self::getQueriesExecuted();
-
-// Get the current query count
 $count = self::getQueryCount();
-
-// Get lazy loading violations (after using assertNoLazyLoading)
 $violations = self::getLazyLoadingViolations();
-
-// Get index analysis results (after using assertAllQueriesUseIndexes)
 $results = self::getIndexAnalysisResults();
-
-// Get duplicate queries (after using assertNoDuplicateQueries)
 $duplicates = self::getDuplicateQueries();
-
-// Get total query execution time in milliseconds
 $totalTime = self::getTotalQueryTime();
 ```
 
