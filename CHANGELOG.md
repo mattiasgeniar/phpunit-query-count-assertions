@@ -2,6 +2,25 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## 1.1.6 - 2026-01-12
+
+Query Performance Assertions: Index Usage, Duplicates & Timing
+
+### Added
+
+- `assertAllQueriesUseIndexes()` - detect full table scans and missing indexes via EXPLAIN
+- `assertNoDuplicateQueries()` - catch repeated identical queries
+- `assertMaxQueryTime()` - fail when any single query exceeds a threshold
+- `assertTotalQueryTime()` - fail when total query time exceeds a threshold
+- `assertMaxRowsExamined()` - fail when queries examine too many rows (MySQL/MariaDB)
+- `assertQueriesAreEfficient()` - combined check for N+1, duplicates, and index usage
+- `trackQueriesForEfficiency()` - enable test-wide efficiency tracking in setUp/beforeEach
+- `registerQueryAnalyser()` - add custom analysers for additional databases
+- MySQL, MariaDB, and SQLite support for query analysis
+- Issue severity levels (ERROR, WARNING, INFO)
+- Small table optimization: ignores full scans on tables with < 100 rows
+- PHPStan analysis in CI
+
 ## 1.1.5 - 2025-02-24
 
 PHP 8.4 support
