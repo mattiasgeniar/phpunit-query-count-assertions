@@ -34,9 +34,11 @@ interface QueryAnalyser
      * Analyze EXPLAIN results and return any performance issues found.
      *
      * @param  array<array-key, mixed>  $explainResults
+     * @param  string|null  $sql  Original SQL query for context (helps identify FK constraint checks)
+     * @param  Connection|null  $connection  Database connection for schema queries
      * @return array<int, QueryIssue>
      */
-    public function analyzeIndexUsage(array $explainResults): array;
+    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array;
 
     /**
      * Check if this analyser supports row count estimation.

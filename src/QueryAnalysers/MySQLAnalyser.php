@@ -43,10 +43,10 @@ class MySQLAnalyser implements QueryAnalyser
         return $this->explainTabular($connection, $sql, $bindings);
     }
 
-    public function analyzeIndexUsage(array $explainResults): array
+    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array
     {
         if (isset($explainResults['query_block'])) {
-            return $this->analyzeJsonExplain($explainResults);
+            return $this->deduplicateIssues($this->analyzeJsonExplain($explainResults));
         }
 
         $issues = [];
@@ -56,7 +56,7 @@ class MySQLAnalyser implements QueryAnalyser
             $issues = [...$issues, ...$this->analyzeTabularRow($row)];
         }
 
-        return $issues;
+        return $this->deduplicateIssues($issues);
     }
 
     public function supportsRowCounting(): bool

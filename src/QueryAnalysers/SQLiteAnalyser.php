@@ -22,18 +22,27 @@ class SQLiteAnalyser implements QueryAnalyser
     /**
      * @return array<int, QueryIssue>
      */
-    public function analyzeIndexUsage(array $explainResults): array
+    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array
     {
         $issues = [];
+        $targetTable = $this->extractTargetTable($sql);
+        $queryType = $this->extractQueryType($sql);
 
         foreach ($explainResults as $row) {
             $row = (array) $row;
             $detail = $row['detail'] ?? '';
 
-            $issues = [...$issues, ...$this->analyzeDetailString($detail)];
+            $rowIssues = $this->analyzeDetailString(
+                $detail,
+                $targetTable,
+                $queryType,
+                $connection
+            );
+
+            $issues = [...$issues, ...$rowIssues];
         }
 
-        return $issues;
+        return $this->deduplicateIssues($issues);
     }
 
     public function supportsRowCounting(): bool
@@ -48,6 +57,69 @@ class SQLiteAnalyser implements QueryAnalyser
     }
 
     /**
+     * Extract the target table from a DELETE or UPDATE query.
+     */
+    protected function extractTargetTable(?string $sql): ?string
+    {
+        if ($sql === null) {
+            return null;
+        }
+
+        // DELETE FROM "table" or DELETE FROM table
+        if (preg_match('/^\s*delete\s+from\s+[`"\']?(\w+)[`"\']?/i', $sql, $matches)) {
+            return $matches[1];
+        }
+
+        // UPDATE "table" SET or UPDATE table SET
+        if (preg_match('/^\s*update\s+[`"\']?(\w+)[`"\']?/i', $sql, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract the query type (DELETE, UPDATE, SELECT, etc.).
+     */
+    protected function extractQueryType(?string $sql): ?string
+    {
+        if ($sql === null) {
+            return null;
+        }
+
+        if (preg_match('/^\s*(\w+)/i', $sql, $matches)) {
+            return strtoupper($matches[1]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get foreign key information for a table that references the target table.
+     *
+     * @return array<int, array{from: string, to: string, on_delete: string, on_update: string}>
+     */
+    protected function getForeignKeysReferencing(Connection $connection, string $childTable, string $parentTable): array
+    {
+        $fks = $connection->select("PRAGMA foreign_key_list({$childTable})");
+        $matching = [];
+
+        foreach ($fks as $fk) {
+            $fk = (array) $fk;
+            if (strcasecmp($fk['table'] ?? '', $parentTable) === 0) {
+                $matching[] = [
+                    'from' => $fk['from'],
+                    'to' => $fk['to'],
+                    'on_delete' => $fk['on_delete'] ?? 'NO ACTION',
+                    'on_update' => $fk['on_update'] ?? 'NO ACTION',
+                ];
+            }
+        }
+
+        return $matching;
+    }
+
+    /**
      * Analyze a SQLite EXPLAIN QUERY PLAN detail string.
      *
      * SQLite EXPLAIN QUERY PLAN output patterns:
@@ -59,18 +131,34 @@ class SQLiteAnalyser implements QueryAnalyser
      *
      * @return array<int, QueryIssue>
      */
-    protected function analyzeDetailString(string $detail): array
-    {
+    protected function analyzeDetailString(
+        string $detail,
+        ?string $targetTable,
+        ?string $queryType,
+        ?Connection $connection
+    ): array {
         $issues = [];
 
         // Check for full table scan (but not CONSTANT which is an optimization)
         if (preg_match('/^SCAN (\w+)/', $detail, $matches)) {
-            $table = $matches[1];
+            $scannedTable = $matches[1];
 
-            if (strcasecmp($table, 'CONSTANT') !== 0) {
+            if (strcasecmp($scannedTable, 'CONSTANT') === 0) {
+                return $issues;
+            }
+
+            // Check if this is a FK constraint check on a different table
+            if ($this->isForeignKeyConstraintCheck($scannedTable, $targetTable, $queryType)) {
+                $issues[] = $this->createForeignKeyIssue(
+                    $scannedTable,
+                    $targetTable,
+                    $queryType,
+                    $connection
+                );
+            } else {
                 $issues[] = QueryIssue::error(
-                    message: "Full table scan on '{$table}'",
-                    table: $table,
+                    message: "Full table scan on '{$scannedTable}'",
+                    table: $scannedTable,
                 );
             }
         }
@@ -97,5 +185,53 @@ class SQLiteAnalyser implements QueryAnalyser
         }
 
         return $issues;
+    }
+
+    /**
+     * Check if a table scan is likely a FK constraint check.
+     */
+    protected function isForeignKeyConstraintCheck(?string $scannedTable, ?string $targetTable, ?string $queryType): bool
+    {
+        if ($scannedTable === null || $targetTable === null || $queryType === null) {
+            return false;
+        }
+
+        // FK checks only happen on DELETE/UPDATE
+        if (! in_array($queryType, ['DELETE', 'UPDATE'], true)) {
+            return false;
+        }
+
+        // If scanning a different table than the target, it's likely a FK check
+        return strcasecmp($scannedTable, $targetTable) !== 0;
+    }
+
+    /**
+     * Create an issue for a FK constraint check.
+     */
+    protected function createForeignKeyIssue(
+        string $scannedTable,
+        ?string $targetTable,
+        ?string $queryType,
+        ?Connection $connection
+    ): QueryIssue {
+        $fkDetails = '';
+
+        if ($connection !== null && $targetTable !== null) {
+            $fks = $this->getForeignKeysReferencing($connection, $scannedTable, $targetTable);
+
+            if (! empty($fks)) {
+                $fkDescriptions = [];
+                foreach ($fks as $fk) {
+                    $action = $queryType === 'DELETE' ? $fk['on_delete'] : $fk['on_update'];
+                    $fkDescriptions[] = "{$scannedTable}.{$fk['from']} → {$targetTable}.{$fk['to']} (ON {$queryType} {$action})";
+                }
+                $fkDetails = ': ' . implode(', ', $fkDescriptions);
+            }
+        }
+
+        return QueryIssue::warning(
+            message: "Full table scan on '{$scannedTable}' (FK constraint check{$fkDetails})",
+            table: $scannedTable,
+        );
     }
 }

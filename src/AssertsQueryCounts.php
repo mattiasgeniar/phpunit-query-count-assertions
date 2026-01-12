@@ -581,7 +581,7 @@ trait AssertsQueryCounts
             }
 
             $explainResults = $analyser->explain($connection, $sql, $bindings);
-            $queryIssues = $analyser->analyzeIndexUsage($explainResults);
+            $queryIssues = $analyser->analyzeIndexUsage($explainResults, $sql, $connection);
 
             // Filter by severity
             $filteredIssues = array_filter(
