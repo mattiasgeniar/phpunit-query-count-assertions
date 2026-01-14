@@ -358,6 +358,36 @@ class AssertsQueryCountsTest extends TestCase
         $first = array_values($duplicates)[0];
         $this->assertEquals(2, $first['count']);
         $this->assertEquals('SELECT 1', $first['query']);
+        $this->assertArrayHasKey('locations', $first);
+        $this->assertCount(2, $first['locations']);
+
+        // Each location should have file and line info
+        foreach ($first['locations'] as $location) {
+            $this->assertArrayHasKey('file', $location);
+            $this->assertArrayHasKey('line', $location);
+            $this->assertNotEmpty($location['file']);
+            $this->assertIsInt($location['line']);
+        }
+    }
+
+    #[Test]
+    public function it_includes_locations_in_duplicate_query_failure_message(): void
+    {
+        try {
+            $this->assertNoDuplicateQueries(function () {
+                DB::select('SELECT 1');
+                DB::select('SELECT 1');
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('Locations:', $message);
+            $this->assertStringContainsString('#1:', $message);
+            $this->assertStringContainsString('#2:', $message);
+            // Should contain file:line format
+            $this->assertMatchesRegularExpression('/\.php:\d+/', $message);
+        }
     }
 
     #[Test]

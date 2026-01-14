@@ -29,6 +29,28 @@ trait AssertsQueryCounts
     private static array $duplicateQueries = [];
 
     /**
+     * Stack traces for executed queries, keyed by query signature.
+     *
+     * @var array<string, array<int, array{file: string, line: int}>>
+     */
+    private static array $queryStackTraces = [];
+
+    /**
+     * Current tracking session ID to prevent cross-test pollution.
+     */
+    private static ?string $currentTrackingSession = null;
+
+    /**
+     * Connection ID where the stack trace listener was registered.
+     */
+    private static ?int $stackTraceListenerConnectionId = null;
+
+    /**
+     * Connection name being tracked, to avoid cross-connection noise.
+     */
+    private static ?string $trackingConnectionName = null;
+
+    /**
      * Registered query analysers.
      *
      * @var array<int, QueryAnalyser>
@@ -239,6 +261,9 @@ trait AssertsQueryCounts
         self::$lazyLoadingViolations = [];
         self::$duplicateQueries = [];
         self::$indexAnalysisResults = [];
+        self::$queryStackTraces = [];
+        self::$trackingConnectionName = null;
+        self::$currentTrackingSession = null;
     }
 
     private function enableLazyLoadingTracking(): void
@@ -334,7 +359,7 @@ trait AssertsQueryCounts
     /**
      * Get duplicate queries from the last check.
      *
-     * @return array<string, array{count: int, query: string, bindings: array}>
+     * @return array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}>
      */
     public static function getDuplicateQueries(): array
     {
@@ -378,7 +403,7 @@ trait AssertsQueryCounts
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
-            $key = $sql . '|' . json_encode($bindings);
+            $key = self::buildQuerySignature($sql, $bindings);
 
             if (! isset($seen[$key])) {
                 $seen[$key] = [
@@ -392,6 +417,7 @@ trait AssertsQueryCounts
 
         foreach ($seen as $key => $data) {
             if ($data['count'] > 1) {
+                $data['locations'] = self::$queryStackTraces[$key] ?? [];
                 self::$duplicateQueries[$key] = $data;
             }
         }
@@ -411,31 +437,125 @@ trait AssertsQueryCounts
         foreach ($duplicates as $data) {
             $index++;
             $message .= "\n\n  {$index}. Executed {$data['count']} times: {$data['query']}";
-
-            if (! empty($data['bindings'])) {
-                $bindings = json_encode($data['bindings']);
-                $message .= "\n     Bindings: {$bindings}";
-            }
+            $message .= $this->formatQueryDetails(
+                $data['bindings'] ?? [],
+                $data['locations'] ?? []
+            );
         }
 
         return $message;
     }
 
+    private static function buildQuerySignature(string $sql, array $bindings): string
+    {
+        return $sql . '|' . json_encode($bindings);
+    }
+
     /**
-     * @return array<int, array{query: string, bindings: array, time: float}>
+     * @return array<int, array{file: string, line: int}>
+     */
+    private function getAllQueryLocations(string $sql, array $bindings): array
+    {
+        $key = self::buildQuerySignature($sql, $bindings);
+
+        return self::$queryStackTraces[$key] ?? [];
+    }
+
+    /**
+     * @param array<string, int> $offsets
+     * @return array<int, array{file: string, line: int}>
+     */
+    private function takeNextQueryLocation(string $sql, array $bindings, array &$offsets): array
+    {
+        $key = self::buildQuerySignature($sql, $bindings);
+        $offset = $offsets[$key] ?? 0;
+        $offsets[$key] = $offset + 1;
+
+        $location = self::$queryStackTraces[$key][$offset] ?? null;
+
+        return $location ? [$location] : [];
+    }
+
+    /**
+     * @param array<int, array{file: string, line: int}> $locations
+     * @param array<int, string> $extraLines
+     */
+    private function formatQueryDetails(
+        array $bindings,
+        array $locations,
+        array $extraLines = [],
+        int $indent = 5
+    ): string
+    {
+        $lines = [];
+        $indentation = str_repeat(' ', $indent);
+        $childIndentation = str_repeat(' ', $indent + 2);
+
+        if (! empty($bindings)) {
+            $bindingsText = json_encode($bindings);
+            $lines[] = $indentation . "Bindings: {$bindingsText}";
+        }
+
+        foreach ($extraLines as $extraLine) {
+            $lines[] = $indentation . $extraLine;
+        }
+
+        if (! empty($locations)) {
+            $lines[] = $indentation . 'Locations:';
+            foreach ($locations as $locationIndex => $location) {
+                $occurrenceNumber = $locationIndex + 1;
+                $file = $this->formatFilePath($location['file']);
+                $lines[] = $childIndentation . "#{$occurrenceNumber}: {$file}:{$location['line']}";
+            }
+        }
+
+        if (empty($lines)) {
+            return '';
+        }
+
+        return "\n" . implode("\n", $lines);
+    }
+
+    /**
+     * Format a file path for display, making it relative to the project root if possible.
+     */
+    private function formatFilePath(string $filePath): string
+    {
+        // Try to make path relative to common project roots
+        $basePaths = [
+            base_path() . DIRECTORY_SEPARATOR,
+            getcwd() . DIRECTORY_SEPARATOR,
+        ];
+
+        foreach ($basePaths as $basePath) {
+            if (str_starts_with($filePath, $basePath)) {
+                return substr($filePath, strlen($basePath));
+            }
+        }
+
+        return $filePath;
+    }
+
+    /**
+     * @return array<int, array{query: string, bindings: array, time: float, locations: array<int, array{file: string, line: int}>}>
      */
     private function findSlowQueries(array $queries, float $maxMilliseconds): array
     {
         $slowQueries = [];
+        $locationOffsets = [];
 
         foreach ($queries as $query) {
             $time = $query['time'] ?? 0;
+            $sql = $query['query'];
+            $bindings = $query['bindings'] ?? [];
+            $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
 
             if ($time > $maxMilliseconds) {
                 $slowQueries[] = [
-                    'query' => $query['query'],
-                    'bindings' => $query['bindings'] ?? [],
+                    'query' => $sql,
+                    'bindings' => $bindings,
                     'time' => $time,
+                    'locations' => $locations,
                 ];
             }
         }
@@ -455,11 +575,10 @@ trait AssertsQueryCounts
             $number = $index + 1;
             $time = round($query['time'], 2);
             $message .= "\n\n  {$number}. [{$time}ms] {$query['query']}";
-
-            if (! empty($query['bindings'])) {
-                $bindings = json_encode($query['bindings']);
-                $message .= "\n     Bindings: {$bindings}";
-            }
+            $message .= $this->formatQueryDetails(
+                $query['bindings'] ?? [],
+                $query['locations'] ?? []
+            );
         }
 
         return $message;
@@ -475,17 +594,20 @@ trait AssertsQueryCounts
         $roundedTotalTime = round($totalTime, 2);
         $message = "Total query time {$roundedTotalTime}ms exceeds budget of {$maxMilliseconds}ms.";
         $message .= "\nQueries executed:";
+        $locationOffsets = [];
 
         foreach ($queries as $index => $query) {
             $number = $index + 1;
             $time = round($query['time'] ?? 0, 2);
             $sql = $query['query'];
             $message .= "\n  {$number}. [{$time}ms] {$sql}";
-
-            if (! empty($query['bindings'])) {
-                $bindings = json_encode($query['bindings']);
-                $message .= "\n      Bindings: {$bindings}";
-            }
+            $bindings = $query['bindings'] ?? [];
+            $message .= $this->formatQueryDetails(
+                $bindings,
+                $this->takeNextQueryLocation($sql, $bindings, $locationOffsets),
+                [],
+                6
+            );
         }
 
         return $message;
@@ -504,10 +626,12 @@ trait AssertsQueryCounts
 
         $issues = [];
         $connection = DB::connection();
+        $locationOffsets = [];
 
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
+            $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
 
             if (! $analyser->canExplain($sql)) {
                 continue;
@@ -521,6 +645,7 @@ trait AssertsQueryCounts
                     'query' => $sql,
                     'bindings' => $bindings,
                     'rows' => $totalRows,
+                    'locations' => $locations,
                 ];
             }
         }
@@ -539,13 +664,13 @@ trait AssertsQueryCounts
         foreach ($issues as $index => $issue) {
             $number = $index + 1;
             $message .= "\n\n  {$number}. {$issue['query']}";
-
-            if (! empty($issue['bindings'])) {
-                $bindings = json_encode($issue['bindings']);
-                $message .= "\n     Bindings: {$bindings}";
-            }
-
-            $message .= "\n     Rows examined: {$issue['rows']}";
+            $bindings = $issue['bindings'] ?? [];
+            $locations = $issue['locations'] ?? $this->getAllQueryLocations($issue['query'], $bindings);
+            $message .= $this->formatQueryDetails(
+                $bindings,
+                $locations,
+                ["Rows examined: {$issue['rows']}"]
+            );
         }
 
         return $message;
@@ -555,7 +680,7 @@ trait AssertsQueryCounts
      * Analyze queries for index usage.
      *
      * @param  Severity  $minSeverity  Minimum severity level to report
-     * @return array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, explain: array}>
+     * @return array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations: array<int, array{file: string, line: int}>}>
      */
     private function analyzeQueriesForIndexUsage(array $queries, Severity $minSeverity = Severity::Warning): array
     {
@@ -571,10 +696,12 @@ trait AssertsQueryCounts
         self::$indexAnalysisResults = [];
         $issues = [];
         $connection = DB::connection();
+        $locationOffsets = [];
 
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
+            $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
 
             if (! $analyser->canExplain($sql)) {
                 continue;
@@ -601,6 +728,7 @@ trait AssertsQueryCounts
                     'query' => $sql,
                     'bindings' => $bindings,
                     'issues' => $filteredIssues,
+                    'locations' => $locations,
                 ];
             }
         }
@@ -609,7 +737,7 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>}>  $issues
+     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array{file: string, line: int}>}>  $issues
      */
     private function formatIndexFailureMessage(array $issues): string
     {
@@ -623,17 +751,20 @@ trait AssertsQueryCounts
             $number = $index + 1;
             $sql = $issue['query'];
             $message .= "\n\n  {$number}. {$sql}";
+            $bindings = $issue['bindings'] ?? [];
+            $locations = $issue['locations'] ?? $this->getAllQueryLocations($sql, $bindings);
+            $extraLines = ['Issues:'];
 
-            if (! empty($issue['bindings'])) {
-                $bindings = json_encode($issue['bindings']);
-                $message .= "\n     Bindings: {$bindings}";
-            }
-
-            $message .= "\n     Issues:";
             foreach ($issue['issues'] as $queryIssue) {
                 $severityLabel = strtoupper($queryIssue->severity->value);
-                $message .= "\n       - [{$severityLabel}] {$queryIssue}";
+                $extraLines[] = "  - [{$severityLabel}] {$queryIssue}";
             }
+
+            $message .= $this->formatQueryDetails(
+                $bindings,
+                $locations,
+                $extraLines
+            );
         }
 
         return $message;
@@ -696,6 +827,7 @@ trait AssertsQueryCounts
         $closure();
         $assertion();
         DB::flushQueryLog();
+        self::$currentTrackingSession = null;
     }
 
     private function formatFailureMessage(string $message): string
@@ -708,17 +840,21 @@ trait AssertsQueryCounts
 
         $formatted = $message . "\nQueries executed:";
 
+        $locationOffsets = [];
+
         foreach ($queries as $index => $query) {
             $number = $index + 1;
             $sql = $query['query'];
             $time = round($query['time'], 2);
 
             $formatted .= "\n  {$number}. [{$time}ms] {$sql}";
-
-            if (! empty($query['bindings'])) {
-                $bindings = json_encode($query['bindings']);
-                $formatted .= "\n      Bindings: {$bindings}";
-            }
+            $bindings = $query['bindings'] ?? [];
+            $formatted .= $this->formatQueryDetails(
+                $bindings,
+                $this->takeNextQueryLocation($sql, $bindings, $locationOffsets),
+                [],
+                6
+            );
         }
 
         return $formatted;
@@ -728,6 +864,89 @@ trait AssertsQueryCounts
     {
         DB::flushQueryLog();
         DB::enableQueryLog();
+        self::$queryStackTraces = [];
+        $connection = DB::connection();
+        self::$trackingConnectionName = $connection->getName();
+        self::$currentTrackingSession = uniqid('tracking_', true);
+        self::enableStackTraceCapture();
+    }
+
+    private static function enableStackTraceCapture(): void
+    {
+        $connection = DB::connection();
+        $connectionId = spl_object_id($connection);
+
+        if (self::$stackTraceListenerConnectionId === $connectionId) {
+            return;
+        }
+
+        self::$stackTraceListenerConnectionId = $connectionId;
+
+        $connection->listen(function ($query) {
+            if (self::$currentTrackingSession === null) {
+                return;
+            }
+
+            $connectionName = $query->connectionName ?? null;
+            if (self::$trackingConnectionName !== null && $connectionName !== self::$trackingConnectionName) {
+                return;
+            }
+
+            $key = self::buildQuerySignature($query->sql, $query->bindings);
+            $trace = self::captureRelevantStackTrace();
+
+            if (! isset(self::$queryStackTraces[$key])) {
+                self::$queryStackTraces[$key] = [];
+            }
+
+            self::$queryStackTraces[$key][] = $trace;
+        });
+    }
+
+    /**
+     * Capture a stack trace filtered to show only relevant application code.
+     *
+     * @return array{file: string, line: int}
+     */
+    private static function captureRelevantStackTrace(): array
+    {
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 50);
+
+        $skipPatterns = [
+            '/vendor\/laravel\/framework/',
+            '/vendor\/illuminate/',
+            '/AssertsQueryCounts\.php$/',
+            '/vendor\/phpunit/',
+        ];
+
+        $fallback = ['file' => 'unknown', 'line' => 0];
+
+        foreach ($trace as $frame) {
+            if (! isset($frame['file'], $frame['line'])) {
+                continue;
+            }
+
+            // Capture first valid frame as fallback in case all frames are internal
+            if ($fallback['file'] === 'unknown') {
+                $fallback = ['file' => $frame['file'], 'line' => $frame['line']];
+            }
+
+            $file = $frame['file'];
+            $isInternal = false;
+
+            foreach ($skipPatterns as $pattern) {
+                if (preg_match($pattern, $file)) {
+                    $isInternal = true;
+                    break;
+                }
+            }
+
+            if (! $isInternal) {
+                return ['file' => $frame['file'], 'line' => $frame['line']];
+            }
+        }
+
+        return $fallback;
     }
 
     public static function getQueriesExecuted(): array
