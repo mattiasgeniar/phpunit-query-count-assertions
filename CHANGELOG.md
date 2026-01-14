@@ -2,6 +2,14 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## 1.1.7 - 2026-01-14
+
+### What's Changed
+
+* Add query location reporting to assertion failures by @mattiasgeniar in https://github.com/mattiasgeniar/phpunit-query-count-assertions/pull/14
+
+**Full Changelog**: https://github.com/mattiasgeniar/phpunit-query-count-assertions/compare/1.1.6...1.1.7
+
 ## Unreleased
 
 ### Added
@@ -30,6 +38,7 @@ $this->assertAllQueriesUseIndexes(function () {
     User::where('email', 'test@example.com')->first();
 });
 
+
 ```
 Supports MySQL, MariaDB, and SQLite. Detects full table scans, unused indexes, filesort, temporary tables, and more.
 
@@ -43,6 +52,7 @@ $this->assertNoDuplicateQueries(function () {
     User::find(1); // Fails - duplicate
 });
 
+
 ```
 ##### Query Timing Assertions
 
@@ -52,6 +62,7 @@ Set performance budgets for your queries:
 $this->assertMaxQueryTime(100, fn() => ...);    // No single query over 100ms
 $this->assertTotalQueryTime(500, fn() => ...);  // Total time under 500ms
 
+
 ```
 ##### Row Count Threshold (MySQL/MariaDB)
 
@@ -59,6 +70,7 @@ Fail when queries examine too many rows:
 
 ```php
 $this->assertMaxRowsExamined(1000, fn() => User::where('status', 'active')->get());
+
 
 ```
 ##### Combined Efficiency Assertion
@@ -70,6 +82,7 @@ $this->assertQueriesAreEfficient(function () {
     $users = User::with('posts')->get();
 });
 
+
 ```
 Or use `trackQueriesForEfficiency()` in setUp/beforeEach for test-wide tracking.
 
@@ -79,6 +92,7 @@ Add support for additional databases:
 
 ```php
 AssertsQueryCounts::registerQueryAnalyser(new PostgresAnalyser());
+
 
 ```
 #### Other Improvements
