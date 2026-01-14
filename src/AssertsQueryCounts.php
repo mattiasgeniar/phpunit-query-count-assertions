@@ -462,7 +462,7 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @param array<string, int> $offsets
+     * @param  array<string, int>  $offsets
      * @return array<int, array{file: string, line: int}>
      */
     private function takeNextQueryLocation(string $sql, array $bindings, array &$offsets): array
@@ -477,16 +477,15 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @param array<int, array{file: string, line: int}> $locations
-     * @param array<int, string> $extraLines
+     * @param  array<int, array{file: string, line: int}>  $locations
+     * @param  array<int, string>  $extraLines
      */
     private function formatQueryDetails(
         array $bindings,
         array $locations,
         array $extraLines = [],
         int $indent = 5
-    ): string
-    {
+    ): string {
         $lines = [];
         $indentation = str_repeat(' ', $indent);
         $childIndentation = str_repeat(' ', $indent + 2);
