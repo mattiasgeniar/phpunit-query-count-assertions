@@ -2,6 +2,17 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## Unreleased
+
+### Added
+
+- Query locations (file:line) in failure output for query count, duplicate, index usage, row count, and timing assertions
+- Locations included in `getDuplicateQueries()` results
+
+### Fixed
+
+- Stack trace listeners register per connection to keep locations accurate across test app instances
+
 ## Query Performance Assertions: Index Usage, Duplicates & Timing - 2026-01-12
 
 ### Query Performance Assertions: Index Usage, Duplicates & Timing

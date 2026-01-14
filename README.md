@@ -104,11 +104,19 @@ Expected 1 queries, got 3.
 Queries executed:
   1. [0.45ms] SELECT * FROM users WHERE id = ?
       Bindings: [1]
+      Locations:
+        #1: tests/Feature/UserTest.php:42
   2. [0.32ms] SELECT * FROM posts WHERE user_id = ?
       Bindings: [1]
+      Locations:
+        #1: tests/Feature/UserTest.php:46
   3. [0.28ms] SELECT * FROM comments WHERE post_id IN (?, ?, ?)
       Bindings: [1, 2, 3]
+      Locations:
+        #1: tests/Feature/UserTest.php:50
 ```
+
+Locations (file:line) are shown for each query when available. This applies to duplicate, index, row count, timing, and total time failures too.
 
 ## Lazy loading / N+1 detection
 
@@ -173,6 +181,8 @@ Queries with index issues detected:
      Bindings: ["John"]
      Issues:
        - [ERROR] Full table scan on 'users'
+     Locations:
+       #1: tests/Feature/UserTest.php:42
 ```
 
 ### Supported databases
@@ -250,6 +260,9 @@ Duplicate queries detected:
 
   1. Executed 2 times: SELECT * FROM users WHERE id = ?
      Bindings: [1]
+     Locations:
+       #1: tests/Feature/UserTest.php:42
+       #2: tests/Feature/UserTest.php:43
 ```
 
 **Note:** Different bindings = different queries. `User::find(1)` and `User::find(2)` are unique.
@@ -270,6 +283,8 @@ Queries examining more than 1000 rows:
   1. SELECT * FROM users WHERE status = ?
      Bindings: ["active"]
      Rows examined: 15000
+     Locations:
+       #1: tests/Feature/UserTest.php:42
 ```
 
 SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion is skipped.
@@ -296,8 +311,12 @@ Output:
 Queries exceeding 100ms:
 
   1. [245.32ms] SELECT * FROM users
+     Locations:
+       #1: tests/Feature/UserTest.php:42
   2. [102.15ms] SELECT * FROM posts WHERE published = ?
      Bindings: [true]
+     Locations:
+       #1: tests/Feature/UserTest.php:43
 ```
 
 ## Combined efficiency assertion
@@ -540,7 +559,7 @@ $results = self::getIndexAnalysisResults();
 
 // Get duplicate queries from the last check
 $duplicates = self::getDuplicateQueries();
-// Returns: ['key' => ['count' => 2, 'query' => '...', 'bindings' => [...]], ...]
+// Returns: ['key' => ['count' => 2, 'query' => '...', 'bindings' => [...], 'locations' => [['file' => '...', 'line' => 123]]], ...]
 
 // Get total query execution time in milliseconds
 $totalTime = self::getTotalQueryTime();
