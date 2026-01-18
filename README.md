@@ -240,7 +240,7 @@ By default, only errors and warnings cause assertion failures.
 
 ### Small table optimization
 
-Full table scans on tables with fewer than 100 rows are ignored by default, since scanning small tables is often faster than using an index. See [Configurable thresholds](#configurable-thresholds) to adjust this.
+Full table scans and "index available but not used" warnings on tables with fewer than 100 rows are ignored by default, since scanning small tables is often faster than using an index. MySQL's query optimizer deliberately skips indexes on tiny tables. See [Configurable thresholds](#configurable-thresholds) to adjust this.
 
 ## Duplicate query detection
 
@@ -472,7 +472,7 @@ class YourTest extends TestCase
 
 | Method | Default | Description |
 |--------|---------|-------------|
-| `withMinRowsForScanWarning(int)` | 100 | Minimum rows to flag a full table scan as an error |
+| `withMinRowsForScanWarning(int)` | 100 | Minimum rows to flag full table scans and unused index warnings |
 | `withMaxCost(float)` | null (disabled) | Maximum query cost before flagging as a warning |
 
 ## Custom analysers

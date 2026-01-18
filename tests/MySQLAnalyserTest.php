@@ -4,6 +4,8 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 
 use Illuminate\Database\Connection;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
+use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -30,7 +32,7 @@ class MySQLAnalyserTest extends TestCase
         ];
 
         $issues = $analyser->analyzeIndexUsage($explain);
-        $messages = array_map(fn ($issue) => $issue->message, $issues);
+        $messages = $this->extractIssueMessages($issues);
 
         $this->assertContains("Full table scan on 'users'", $messages);
         $this->assertContains("Index available but not used on 'users'", $messages);
@@ -67,6 +69,66 @@ class MySQLAnalyserTest extends TestCase
         ];
 
         $this->assertSame(35, $analyser->getRowsExamined($explain));
+    }
+
+    #[Test]
+    #[DataProvider('rowThresholdProvider')]
+    public function it_respects_row_threshold_for_index_warnings_in_json_explain(int $rows, bool $shouldWarn): void
+    {
+        $analyser = new MySQLAnalyser;
+
+        $explain = [
+            'query_block' => [
+                'table' => [
+                    'table_name' => 'users',
+                    'access_type' => 'ALL',
+                    'rows_examined_per_scan' => $rows,
+                    'possible_keys' => ['idx_name'],
+                    'key' => null,
+                ],
+            ],
+        ];
+
+        $issues = $analyser->analyzeIndexUsage($explain);
+        $messages = $this->extractIssueMessages($issues);
+
+        $shouldWarn
+            ? $this->assertContains("Index available but not used on 'users'", $messages)
+            : $this->assertNotContains("Index available but not used on 'users'", $messages);
+    }
+
+    public static function rowThresholdProvider(): array
+    {
+        return [
+            'below threshold' => [99, false],
+            'at threshold' => [100, true],
+            'above threshold' => [101, true],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('rowThresholdProvider')]
+    public function it_respects_row_threshold_for_index_warnings_in_tabular_explain(int $rows, bool $shouldWarn): void
+    {
+        $analyser = new MySQLAnalyser;
+
+        $explain = [
+            (object) [
+                'table' => 'users',
+                'type' => 'ALL',
+                'rows' => $rows,
+                'possible_keys' => 'idx_name',
+                'key' => null,
+                'Extra' => '',
+            ],
+        ];
+
+        $issues = $analyser->analyzeIndexUsage($explain);
+        $messages = $this->extractIssueMessages($issues);
+
+        $shouldWarn
+            ? $this->assertContains("Index available but not used on 'users'", $messages)
+            : $this->assertNotContains("Index available but not used on 'users'", $messages);
     }
 
     #[Test]
@@ -109,5 +171,14 @@ class MySQLAnalyserTest extends TestCase
 
         $this->assertSame(1, $versionCalls);
         $this->assertSame(2, $explainCalls);
+    }
+
+    /**
+     * @param  array<int, QueryIssue>  $issues
+     * @return array<int, string>
+     */
+    private function extractIssueMessages(array $issues): array
+    {
+        return array_map(fn ($issue) => $issue->message, $issues);
     }
 }

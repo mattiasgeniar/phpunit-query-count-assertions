@@ -110,26 +110,32 @@ class MySQLAnalyser implements QueryAnalyser
             return $this->supportsJsonExplainCache[$connectionId];
         }
 
-        $supports = false;
+        $supports = $this->detectJsonExplainSupport($connection);
+        $this->supportsJsonExplainCache[$connectionId] = $supports;
 
+        return $supports;
+    }
+
+    protected function detectJsonExplainSupport(Connection $connection): bool
+    {
         try {
             $version = $connection->selectOne('SELECT VERSION() as version');
             $versionString = $version->version ?? '';
 
-            // JSON EXPLAIN available in MySQL 5.6+
-            // MariaDB uses different format, stick to tabular
+            // MariaDB uses different EXPLAIN format, stick to tabular
             if (str_contains(strtolower($versionString), 'mariadb')) {
-                $supports = false;
-            } elseif (preg_match('/^(\d+\.\d+)/', $versionString, $matches)) {
-                $supports = version_compare($matches[1], '5.6', '>=');
+                return false;
             }
+
+            // JSON EXPLAIN available in MySQL 5.6+
+            if (preg_match('/^(\d+\.\d+)/', $versionString, $matches)) {
+                return version_compare($matches[1], '5.6', '>=');
+            }
+
+            return false;
         } catch (Throwable) {
-            $supports = false;
+            return false;
         }
-
-        $this->supportsJsonExplainCache[$connectionId] = $supports;
-
-        return $supports;
     }
 
     protected function explainJson(Connection $connection, string $sql, array $bindings): array
@@ -230,13 +236,9 @@ class MySQLAnalyser implements QueryAnalyser
             $issues[] = $this->fullIndexScanIssue($table, $rows);
         }
 
-        // Index available but not used
-        if (! empty($possibleKeys) && $key === null) {
-            $issues[] = QueryIssue::error(
-                message: "Index available but not used on '{$table}'",
-                table: $table,
-                estimatedRows: $rows,
-            );
+        // Index available but not used (skip for small tables where optimizer may decide scan is faster)
+        if ($this->hasUnusedIndex($possibleKeys, $key, $rows)) {
+            $issues[] = $this->unusedIndexIssue($table, $rows);
         }
 
         // Low filter efficiency (examining many rows, keeping few)
@@ -248,7 +250,7 @@ class MySQLAnalyser implements QueryAnalyser
         }
 
         // Check for filesort
-        if (isset($node['using_filesort']) && $node['using_filesort']) {
+        if (! empty($node['using_filesort'])) {
             $issues[] = QueryIssue::warning(
                 message: "Using filesort on '{$table}'",
                 table: $table,
@@ -256,7 +258,7 @@ class MySQLAnalyser implements QueryAnalyser
         }
 
         // Check for temporary table
-        if (isset($node['using_temporary_table']) && $node['using_temporary_table']) {
+        if (! empty($node['using_temporary_table'])) {
             $issues[] = QueryIssue::warning(
                 message: "Using temporary table on '{$table}'",
                 table: $table,
@@ -329,13 +331,9 @@ class MySQLAnalyser implements QueryAnalyser
             $issues[] = $this->fullIndexScanIssue($table, $rows);
         }
 
-        // Index available but not used
-        if (! empty($possibleKeys) && empty($key)) {
-            $issues[] = QueryIssue::error(
-                message: "Index available but not used on '{$table}'",
-                table: $table,
-                estimatedRows: $rows,
-            );
+        // Index available but not used (skip for small tables where optimizer may decide scan is faster)
+        if ($this->hasUnusedIndex($possibleKeys, $key, $rows)) {
+            $issues[] = $this->unusedIndexIssue($table, $rows);
         }
 
         // Check Extra column for various issues
@@ -359,5 +357,23 @@ class MySQLAnalyser implements QueryAnalyser
         }
 
         return $issues;
+    }
+
+    protected function hasUnusedIndex(array|string|null $possibleKeys, ?string $key, ?int $rows): bool
+    {
+        if (empty($possibleKeys) || ! empty($key)) {
+            return false;
+        }
+
+        return $rows === null || $rows >= $this->minRowsForScanWarning;
+    }
+
+    protected function unusedIndexIssue(string $table, ?int $rows): QueryIssue
+    {
+        return QueryIssue::error(
+            message: "Index available but not used on '{$table}'",
+            table: $table,
+            estimatedRows: $rows,
+        );
     }
 }
