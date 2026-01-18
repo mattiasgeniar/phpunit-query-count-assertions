@@ -2,6 +2,67 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## Cleanup version - 2026-01-18
+
+### Simplify API by consolidating tracking methods
+
+#### Summary
+
+- Consolidated `trackQueriesForEfficiency()` into `trackQueries()` — one method now does everything
+- Changed `trackQueries()` from static to instance method for consistent `$this->` API
+
+#### Breaking Changes
+
+**`self::trackQueries()` → `$this->trackQueries()`**
+
+The method is no longer static. Update your setUp/beforeEach:
+
+```php
+// Before
+protected function setUp(): void
+{
+    parent::setUp();
+    self::trackQueries();
+}
+
+// After
+protected function setUp(): void
+{
+    parent::setUp();
+    $this->trackQueries();
+}
+
+```
+**`trackQueriesForEfficiency()` is deprecated**
+
+Replace with `trackQueries()`:
+
+```php
+// Before
+$this->trackQueriesForEfficiency();
+
+// After
+$this->trackQueries();
+
+```
+#### Migration
+
+Find and replace in your test files:
+
+| Find | Replace |
+|------|---------|
+| `self::trackQueries()` | `$this->trackQueries()` |
+| `$this->trackQueriesForEfficiency()` | `$this->trackQueries()` |
+
+#### Why
+
+The previous API had two methods that were confusingly similar:
+
+- `trackQueries()` — basic query logging
+- `trackQueriesForEfficiency()` — query logging + N+1 detection
+
+Now there's just one method that does everything. If you only need query counts, the efficiency tracking has zero overhead — just don't call `assertQueriesAreEfficient()`.
+
 ## Unreleased
 
 ### Changed
@@ -40,6 +101,7 @@ $this->assertAllQueriesUseIndexes(function () {
 
 
 
+
 ```
 Supports MySQL, MariaDB, and SQLite. Detects full table scans, unused indexes, filesort, temporary tables, and more.
 
@@ -55,6 +117,7 @@ $this->assertNoDuplicateQueries(function () {
 
 
 
+
 ```
 ##### Query Timing Assertions
 
@@ -66,6 +129,7 @@ $this->assertTotalQueryTime(500, fn() => ...);  // Total time under 500ms
 
 
 
+
 ```
 ##### Row Count Threshold (MySQL/MariaDB)
 
@@ -73,6 +137,7 @@ Fail when queries examine too many rows:
 
 ```php
 $this->assertMaxRowsExamined(1000, fn() => User::where('status', 'active')->get());
+
 
 
 
@@ -88,6 +153,7 @@ $this->assertQueriesAreEfficient(function () {
 
 
 
+
 ```
 Or use `trackQueries()` in setUp/beforeEach for test-wide tracking.
 
@@ -97,6 +163,7 @@ Add support for additional databases:
 
 ```php
 AssertsQueryCounts::registerQueryAnalyser(new PostgresAnalyser());
+
 
 
 
