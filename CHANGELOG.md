@@ -2,6 +2,10 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## Bugfix release - 2026-01-18
+
+Skip unused index warnings for small tables where MySQL optimizer prefers full scans
+
 ## 1.1.7 - 2026-01-14
 
 ### What's Changed
@@ -39,6 +43,7 @@ $this->assertAllQueriesUseIndexes(function () {
 });
 
 
+
 ```
 Supports MySQL, MariaDB, and SQLite. Detects full table scans, unused indexes, filesort, temporary tables, and more.
 
@@ -53,6 +58,7 @@ $this->assertNoDuplicateQueries(function () {
 });
 
 
+
 ```
 ##### Query Timing Assertions
 
@@ -63,6 +69,7 @@ $this->assertMaxQueryTime(100, fn() => ...);    // No single query over 100ms
 $this->assertTotalQueryTime(500, fn() => ...);  // Total time under 500ms
 
 
+
 ```
 ##### Row Count Threshold (MySQL/MariaDB)
 
@@ -70,6 +77,7 @@ Fail when queries examine too many rows:
 
 ```php
 $this->assertMaxRowsExamined(1000, fn() => User::where('status', 'active')->get());
+
 
 
 ```
@@ -83,6 +91,7 @@ $this->assertQueriesAreEfficient(function () {
 });
 
 
+
 ```
 Or use `trackQueriesForEfficiency()` in setUp/beforeEach for test-wide tracking.
 
@@ -92,6 +101,7 @@ Add support for additional databases:
 
 ```php
 AssertsQueryCounts::registerQueryAnalyser(new PostgresAnalyser());
+
 
 
 ```
