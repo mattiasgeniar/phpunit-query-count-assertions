@@ -248,15 +248,15 @@ trait AssertsQueryCounts
         });
     }
 
+    /**
+     * @deprecated Use trackQueries() instead. This method will be removed in the next major version.
+     */
     public function trackQueriesForEfficiency(): void
     {
-        $this->resetEfficiencyTracking();
-        self::trackQueries();
-        $this->captureLazyLoadingState();
-        $this->enableLazyLoadingTracking();
+        $this->trackQueries();
     }
 
-    private function resetEfficiencyTracking(): void
+    private static function resetEfficiencyTracking(): void
     {
         self::$lazyLoadingViolations = [];
         self::$duplicateQueries = [];
@@ -266,18 +266,14 @@ trait AssertsQueryCounts
         self::$currentTrackingSession = null;
     }
 
-    private function enableLazyLoadingTracking(): void
+    private static function enableLazyLoadingTracking(): void
     {
         Model::preventLazyLoading();
-        Model::handleLazyLoadingViolationUsing($this->lazyLoadingViolationHandler());
+        Model::handleLazyLoadingViolationUsing(self::lazyLoadingViolationHandler());
     }
 
-    private function captureLazyLoadingState(): void
+    private static function captureLazyLoadingState(): void
     {
-        if (self::$lazyLoadingState !== null) {
-            return;
-        }
-
         $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
         $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
 
@@ -287,7 +283,7 @@ trait AssertsQueryCounts
         ];
     }
 
-    private function restoreLazyLoadingState(): void
+    private static function restoreLazyLoadingState(): void
     {
         if (self::$lazyLoadingState === null) {
             return;
@@ -301,7 +297,7 @@ trait AssertsQueryCounts
         self::$lazyLoadingState = null;
     }
 
-    private function lazyLoadingViolationHandler(): Closure
+    private static function lazyLoadingViolationHandler(): Closure
     {
         return function (Model $model, string $relation): void {
             self::$lazyLoadingViolations[] = [
@@ -315,9 +311,8 @@ trait AssertsQueryCounts
     {
         try {
             if ($closure !== null) {
-                $this->resetEfficiencyTracking();
-                self::trackQueries();
-                $this->withLazyLoadingTracking($closure);
+                $this->trackQueries();
+                $closure();
             }
 
             $queries = self::getQueriesExecuted();
@@ -347,7 +342,7 @@ trait AssertsQueryCounts
                 "Query efficiency issues detected:\n\n" . implode("\n\n---\n\n", $issues)
             );
         } finally {
-            $this->restoreLazyLoadingState();
+            self::restoreLazyLoadingState();
         }
     }
 
@@ -787,7 +782,7 @@ trait AssertsQueryCounts
         $originalCallback = $callbackProperty->getValue(null);
 
         Model::preventLazyLoading();
-        Model::handleLazyLoadingViolationUsing($this->lazyLoadingViolationHandler());
+        Model::handleLazyLoadingViolationUsing(self::lazyLoadingViolationHandler());
 
         try {
             $closure();
@@ -822,7 +817,7 @@ trait AssertsQueryCounts
             return;
         }
 
-        self::trackQueries();
+        $this->trackQueries();
         $closure();
         $assertion();
         DB::flushQueryLog();
@@ -859,15 +854,17 @@ trait AssertsQueryCounts
         return $formatted;
     }
 
-    public static function trackQueries(): void
+    public function trackQueries(): void
     {
+        self::resetEfficiencyTracking();
         DB::flushQueryLog();
         DB::enableQueryLog();
-        self::$queryStackTraces = [];
         $connection = DB::connection();
         self::$trackingConnectionName = $connection->getName();
         self::$currentTrackingSession = uniqid('tracking_', true);
         self::enableStackTraceCapture();
+        self::captureLazyLoadingState();
+        self::enableLazyLoadingTracking();
     }
 
     private static function enableStackTraceCapture(): void

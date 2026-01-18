@@ -2,9 +2,15 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
-## Bugfix release - 2026-01-18
+## Unreleased
 
-Skip unused index warnings for small tables where MySQL optimizer prefers full scans
+### Changed
+
+- Consolidated `trackQueriesForEfficiency()` into `trackQueries()`. The single `trackQueries()` method now enables all tracking features including N+1/lazy loading detection. `trackQueriesForEfficiency()` is deprecated and will be removed in the next major version.
+
+### Fixed
+
+- Skip unused index warnings for small tables where MySQL optimizer prefers full scans
 
 ## 1.1.7 - 2026-01-14
 
@@ -13,17 +19,6 @@ Skip unused index warnings for small tables where MySQL optimizer prefers full s
 * Add query location reporting to assertion failures by @mattiasgeniar in https://github.com/mattiasgeniar/phpunit-query-count-assertions/pull/14
 
 **Full Changelog**: https://github.com/mattiasgeniar/phpunit-query-count-assertions/compare/1.1.6...1.1.7
-
-## Unreleased
-
-### Added
-
-- Query locations (file:line) in failure output for query count, duplicate, index usage, row count, and timing assertions
-- Locations included in `getDuplicateQueries()` results
-
-### Fixed
-
-- Stack trace listeners register per connection to keep locations accurate across test app instances
 
 ## Query Performance Assertions: Index Usage, Duplicates & Timing - 2026-01-12
 
@@ -93,7 +88,7 @@ $this->assertQueriesAreEfficient(function () {
 
 
 ```
-Or use `trackQueriesForEfficiency()` in setUp/beforeEach for test-wide tracking.
+Or use `trackQueries()` in setUp/beforeEach for test-wide tracking.
 
 ##### Custom Query Analysers
 

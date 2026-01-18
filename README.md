@@ -13,7 +13,7 @@ Laravel only.
 
 - PHP 8.2+
 - Laravel 11 or 12
-- PHPUnit 11
+- PHPUnit 11 or Pest 3
 
 ## Installation
 
@@ -23,45 +23,55 @@ You can install the package via composer:
 composer require --dev mattiasgeniar/phpunit-query-count-assertions
 ```
 
-## Usage
+## Quick start
 
-Add the trait, wrap your code in a closure:
+Add the trait, wrap your core logic with efficiency tracking:
 
 ```php
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 
-class YourTest extends TestCase
+class CertificateHealthCheckTest extends TestCase
 {
     use AssertsQueryCounts;
 
-    public function test_eager_loading_is_efficient(): void
+    public function test_health_checker_is_efficient(): void
     {
-        $this->assertQueryCountMatches(2, function() {
-            $user = User::find(1);
-            $posts = $user->posts()->get();
-        });
+        // Setup - create test data (these queries aren't tracked)
+        $certificate = Certificate::factory()->expired()->create();
+        $run = new InMemoryRun();
+
+        // Track only the code under test
+        $this->trackQueries();
+        app(CertificateHealthChecker::class)->perform($run);
+        $this->assertQueriesAreEfficient();
     }
 }
 ```
 
-## Available assertions
+This catches N+1 queries, duplicate queries, and missing indexes in a single assertion. Your test setup (factories, seeders) stays outside the tracked block so it doesn't trigger false positives.
 
-All assertions accept an optional closure:
+### What it catches
+
+- **N+1 queries** — lazy loading violations
+- **Duplicate queries** — same query executed multiple times
+- **Missing indexes** — full table scans, unused indexes
+- **Filesort & temp tables** — common MySQL performance issues
+
+When something fails, you get actionable output with the exact queries and their locations (file:line).
+
+## Query count assertions
+
+For cases where you need precise control over query counts:
 
 ```php
-// No queries at all
-$this->assertNoQueriesExecuted(fn() => $this->getCachedData());
-
 // Exact count
 $this->assertQueryCountMatches(2, fn() => $this->loadUserWithPosts());
 
 // Upper bounds
 $this->assertQueryCountLessThan(6, fn() => $this->fetchDashboard());
-$this->assertQueryCountLessThanOrEqual(5, fn() => $this->fetchDashboard());
 
-// Lower bounds
-$this->assertQueryCountGreaterThan(0, fn() => $this->warmCache());
-$this->assertQueryCountGreaterThanOrEqual(1, fn() => $this->warmCache());
+// No queries (cached?)
+$this->assertNoQueriesExecuted(fn() => $this->getCachedData());
 
 // Range
 $this->assertQueryCountBetween(3, 7, fn() => $this->complexOperation());
@@ -82,7 +92,7 @@ class YourTest extends TestCase
     {
         parent::setUp();
 
-        self::trackQueries();
+        $this->trackQueries();
     }
 
     public function test_queries_across_method_calls(): void
@@ -321,7 +331,7 @@ Queries exceeding 100ms:
 
 ## Combined efficiency assertion
 
-`assertQueriesAreEfficient()` checks everything at once: N+1, duplicates, and missing indexes.
+`assertQueriesAreEfficient()` checks everything at once: N+1, duplicates, and missing indexes. The [Quick start](#quick-start) shows the recommended inline pattern. Below are alternative approaches.
 
 ### With a closure
 
@@ -343,7 +353,7 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 uses(AssertsQueryCounts::class);
 
 beforeEach(function () {
-    $this->trackQueriesForEfficiency();
+    $this->trackQueries();
 });
 
 it('loads the dashboard efficiently', function () {
@@ -375,7 +385,7 @@ class DashboardTest extends TestCase
     {
         parent::setUp();
 
-        $this->trackQueriesForEfficiency();
+        $this->trackQueries();
     }
 
     public function test_dashboard_loads_efficiently(): void
@@ -407,7 +417,7 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 
 pest()->extend(Tests\TestCase::class)
     ->use(AssertsQueryCounts::class)
-    ->beforeEach(fn () => $this->trackQueriesForEfficiency())
+    ->beforeEach(fn () => self::trackQueries())
     ->afterEach(fn () => $this->assertQueriesAreEfficient())
     ->in('Feature');
 ```
@@ -424,7 +434,7 @@ abstract class TestCase extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->trackQueriesForEfficiency();
+        $this->trackQueries();
     }
 
     protected function tearDown(): void

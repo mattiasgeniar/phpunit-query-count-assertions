@@ -19,7 +19,7 @@ class AssertsQueryCountsTest extends TestCase
     {
         parent::setUp();
 
-        self::trackQueries();
+        $this->trackQueries();
     }
 
     #[Test]
@@ -412,7 +412,7 @@ class AssertsQueryCountsTest extends TestCase
     #[Test]
     public function it_returns_total_query_time(): void
     {
-        self::trackQueries();
+        $this->trackQueries();
 
         DB::select('SELECT 1');
         DB::select('SELECT 2');
@@ -567,7 +567,7 @@ class AssertsQueryCountsTest extends TestCase
         $originalPrevention = $preventionProperty->getValue(null);
         $originalCallback = $callbackProperty->getValue(null);
 
-        $this->trackQueriesForEfficiency();
+        $this->trackQueries();
 
         User::create(['name' => 'John']);
 
