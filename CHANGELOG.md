@@ -6,6 +6,7 @@ All notable changes to `phpunit-db-querycounter` will be documented in this file
 
 ### Changed
 
+- **Breaking:** `trackQueries()` is now an instance method. Change `self::trackQueries()` to `$this->trackQueries()`.
 - Consolidated `trackQueriesForEfficiency()` into `trackQueries()`. The single `trackQueries()` method now enables all tracking features including N+1/lazy loading detection. `trackQueriesForEfficiency()` is deprecated and will be removed in the next major version.
 
 ### Fixed
