@@ -132,6 +132,76 @@ class MySQLAnalyserTest extends TestCase
     }
 
     #[Test]
+    #[DataProvider('rowThresholdProvider')]
+    public function it_respects_row_threshold_for_full_index_scan_in_json_explain(int $rows, bool $shouldWarn): void
+    {
+        $analyser = new MySQLAnalyser;
+
+        $explain = [
+            'query_block' => [
+                'table' => [
+                    'table_name' => 'users',
+                    'access_type' => 'index',
+                    'rows_examined_per_scan' => $rows,
+                    'key' => 'idx_name',
+                ],
+            ],
+        ];
+
+        $issues = $analyser->analyzeIndexUsage($explain);
+        $messages = $this->extractIssueMessages($issues);
+
+        $shouldWarn
+            ? $this->assertContains("Full index scan on 'users'", $messages)
+            : $this->assertNotContains("Full index scan on 'users'", $messages);
+    }
+
+    #[Test]
+    #[DataProvider('rowThresholdProvider')]
+    public function it_respects_row_threshold_for_full_index_scan_in_tabular_explain(int $rows, bool $shouldWarn): void
+    {
+        $analyser = new MySQLAnalyser;
+
+        $explain = [
+            (object) [
+                'table' => 'users',
+                'type' => 'index',
+                'rows' => $rows,
+                'key' => 'idx_name',
+                'Extra' => '',
+            ],
+        ];
+
+        $issues = $analyser->analyzeIndexUsage($explain);
+        $messages = $this->extractIssueMessages($issues);
+
+        $shouldWarn
+            ? $this->assertContains("Full index scan on 'users'", $messages)
+            : $this->assertNotContains("Full index scan on 'users'", $messages);
+    }
+
+    #[Test]
+    public function it_warns_on_full_index_scan_when_rows_is_null(): void
+    {
+        $analyser = new MySQLAnalyser;
+
+        $explain = [
+            'query_block' => [
+                'table' => [
+                    'table_name' => 'users',
+                    'access_type' => 'index',
+                    'key' => 'idx_name',
+                ],
+            ],
+        ];
+
+        $issues = $analyser->analyzeIndexUsage($explain);
+        $messages = $this->extractIssueMessages($issues);
+
+        $this->assertContains("Full index scan on 'users'", $messages);
+    }
+
+    #[Test]
     public function it_memoizes_json_explain_support_by_connection(): void
     {
         $analyser = new MySQLAnalyser;

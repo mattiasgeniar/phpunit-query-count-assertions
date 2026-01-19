@@ -72,6 +72,7 @@ Now there's just one method that does everything. If you only need query counts,
 
 ### Fixed
 
+- Skip full index scan warnings for small tables (< 100 rows) where MySQL optimizer prefers scans over seeks
 - Skip unused index warnings for small tables where MySQL optimizer prefers full scans
 
 ## 1.1.7 - 2026-01-14

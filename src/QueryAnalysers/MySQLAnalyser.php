@@ -225,14 +225,12 @@ class MySQLAnalyser implements QueryAnalyser
         $key = $node['key'] ?? null;
 
         // Full table scan
-        if ($accessType === 'ALL') {
-            if ($rows === null || $rows >= $this->minRowsForScanWarning) {
-                $issues[] = $this->fullTableScanIssue($table, $rows);
-            }
+        if ($accessType === 'ALL' && $this->exceedsRowThreshold($rows)) {
+            $issues[] = $this->fullTableScanIssue($table, $rows);
         }
 
         // Full index scan (reads all index entries - often suboptimal)
-        if ($accessType === 'index') {
+        if ($accessType === 'index' && $this->exceedsRowThreshold($rows)) {
             $issues[] = $this->fullIndexScanIssue($table, $rows);
         }
 
@@ -320,14 +318,12 @@ class MySQLAnalyser implements QueryAnalyser
         $key = $row['key'] ?? null;
 
         // Full table scan
-        if ($type === 'ALL') {
-            if ($rows === null || $rows >= $this->minRowsForScanWarning) {
-                $issues[] = $this->fullTableScanIssue($table, $rows);
-            }
+        if ($type === 'ALL' && $this->exceedsRowThreshold($rows)) {
+            $issues[] = $this->fullTableScanIssue($table, $rows);
         }
 
         // Full index scan
-        if ($type === 'index') {
+        if ($type === 'index' && $this->exceedsRowThreshold($rows)) {
             $issues[] = $this->fullIndexScanIssue($table, $rows);
         }
 
@@ -359,13 +355,18 @@ class MySQLAnalyser implements QueryAnalyser
         return $issues;
     }
 
+    protected function exceedsRowThreshold(?int $rows): bool
+    {
+        return $rows === null || $rows >= $this->minRowsForScanWarning;
+    }
+
     protected function hasUnusedIndex(array|string|null $possibleKeys, ?string $key, ?int $rows): bool
     {
         if (empty($possibleKeys) || ! empty($key)) {
             return false;
         }
 
-        return $rows === null || $rows >= $this->minRowsForScanWarning;
+        return $this->exceedsRowThreshold($rows);
     }
 
     protected function unusedIndexIssue(string $table, ?int $rows): QueryIssue
