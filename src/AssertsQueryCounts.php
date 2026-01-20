@@ -818,10 +818,14 @@ trait AssertsQueryCounts
         }
 
         $this->trackQueries();
-        $closure();
-        $assertion();
-        DB::flushQueryLog();
-        self::$currentTrackingSession = null;
+        try {
+            $closure();
+            $assertion();
+        } finally {
+            DB::flushQueryLog();
+            self::$currentTrackingSession = null;
+            self::restoreLazyLoadingState();
+        }
     }
 
     private function formatFailureMessage(string $message): string
