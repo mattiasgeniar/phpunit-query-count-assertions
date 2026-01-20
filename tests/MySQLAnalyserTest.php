@@ -91,18 +91,26 @@ class MySQLAnalyserTest extends TestCase
 
         $issues = $analyser->analyzeIndexUsage($explain);
         $messages = $this->extractIssueMessages($issues);
+        $unusedIndexMessage = "Index available but not used on 'users'";
+        $suppressedMessage = $this->suppressedUnusedIndexMessage($rows);
 
-        $shouldWarn
-            ? $this->assertContains("Index available but not used on 'users'", $messages)
-            : $this->assertNotContains("Index available but not used on 'users'", $messages);
+        if ($shouldWarn) {
+            $this->assertContains($unusedIndexMessage, $messages);
+            $this->assertNotContains($suppressedMessage, $messages);
+
+            return;
+        }
+
+        $this->assertNotContains($unusedIndexMessage, $messages);
+        $this->assertContains($suppressedMessage, $messages);
     }
 
     public static function rowThresholdProvider(): array
     {
         return [
-            'below threshold' => [99, false],
-            'at threshold' => [100, true],
-            'above threshold' => [101, true],
+            'below threshold' => [9, false],
+            'at threshold' => [10, true],
+            'above threshold' => [11, true],
         ];
     }
 
@@ -125,10 +133,18 @@ class MySQLAnalyserTest extends TestCase
 
         $issues = $analyser->analyzeIndexUsage($explain);
         $messages = $this->extractIssueMessages($issues);
+        $unusedIndexMessage = "Index available but not used on 'users'";
+        $suppressedMessage = $this->suppressedUnusedIndexMessage($rows);
 
-        $shouldWarn
-            ? $this->assertContains("Index available but not used on 'users'", $messages)
-            : $this->assertNotContains("Index available but not used on 'users'", $messages);
+        if ($shouldWarn) {
+            $this->assertContains($unusedIndexMessage, $messages);
+            $this->assertNotContains($suppressedMessage, $messages);
+
+            return;
+        }
+
+        $this->assertNotContains($unusedIndexMessage, $messages);
+        $this->assertContains($suppressedMessage, $messages);
     }
 
     #[Test]
@@ -150,10 +166,15 @@ class MySQLAnalyserTest extends TestCase
 
         $issues = $analyser->analyzeIndexUsage($explain);
         $messages = $this->extractIssueMessages($issues);
+        $fullIndexScanMessage = "Full index scan on 'users'";
 
-        $shouldWarn
-            ? $this->assertContains("Full index scan on 'users'", $messages)
-            : $this->assertNotContains("Full index scan on 'users'", $messages);
+        if ($shouldWarn) {
+            $this->assertContains($fullIndexScanMessage, $messages);
+
+            return;
+        }
+
+        $this->assertNotContains($fullIndexScanMessage, $messages);
     }
 
     #[Test]
@@ -174,10 +195,15 @@ class MySQLAnalyserTest extends TestCase
 
         $issues = $analyser->analyzeIndexUsage($explain);
         $messages = $this->extractIssueMessages($issues);
+        $fullIndexScanMessage = "Full index scan on 'users'";
 
-        $shouldWarn
-            ? $this->assertContains("Full index scan on 'users'", $messages)
-            : $this->assertNotContains("Full index scan on 'users'", $messages);
+        if ($shouldWarn) {
+            $this->assertContains($fullIndexScanMessage, $messages);
+
+            return;
+        }
+
+        $this->assertNotContains($fullIndexScanMessage, $messages);
     }
 
     #[Test]
@@ -250,5 +276,10 @@ class MySQLAnalyserTest extends TestCase
     private function extractIssueMessages(array $issues): array
     {
         return array_map(fn ($issue) => $issue->message, $issues);
+    }
+
+    private function suppressedUnusedIndexMessage(int $rows, int $threshold = 10): string
+    {
+        return "Index available but not used on 'users' (rows {$rows} < {$threshold}; small tables often scan faster). Seed more data or lower minRowsForScanWarning.";
     }
 }

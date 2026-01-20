@@ -69,11 +69,13 @@ Now there's just one method that does everything. If you only need query counts,
 
 - **Breaking:** `trackQueries()` is now an instance method. Change `self::trackQueries()` to `$this->trackQueries()`.
 - Consolidated `trackQueriesForEfficiency()` into `trackQueries()`. The single `trackQueries()` method now enables all tracking features including N+1/lazy loading detection. `trackQueriesForEfficiency()` is deprecated and will be removed in the next major version.
+- Lowered the default MySQL `minRowsForScanWarning` threshold to 10 (aligns with MySQL docs on tiny tables).
+- Emit INFO-level index analysis notices by default (non-failing) to surface suppressed index issues.
 
 ### Fixed
 
-- Skip full index scan warnings for small tables (< 100 rows) where MySQL optimizer prefers scans over seeks
-- Skip unused index warnings for small tables where MySQL optimizer prefers full scans
+- Skip full index scan warnings for small tables (fewer than 10 rows) where MySQL optimizer prefers scans over seeks
+- Skip unused index warnings for small tables where MySQL optimizer prefers full scans (fewer than 10 rows)
 
 ## 1.1.7 - 2026-01-14
 
@@ -172,7 +174,7 @@ AssertsQueryCounts::registerQueryAnalyser(new PostgresAnalyser());
 #### Other Improvements
 
 - Issue severity levels (ERROR, WARNING, INFO) with configurable failure thresholds
-- Small table optimization: ignores full scans on tables < 100 rows
+- Small table optimization: ignores full scans on tables < 10 rows
 - FK constraint context in SQLite scan warnings
 - PHPStan analysis added to CI
 

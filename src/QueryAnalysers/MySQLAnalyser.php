@@ -13,9 +13,10 @@ class MySQLAnalyser implements QueryAnalyser
 
     /**
      * Minimum rows threshold to flag a full table scan as an error.
-     * Scans on small tables are often optimal.
+     * MySQL commonly prefers scans on tiny tables (fewer than 10 rows).
+     * https://dev.mysql.com/doc/refman/8.4/en/table-scan-avoidance.html
      */
-    protected int $minRowsForScanWarning = 100;
+    protected int $minRowsForScanWarning = 10;
 
     /**
      * Cost threshold above which queries are flagged.
@@ -215,7 +216,6 @@ class MySQLAnalyser implements QueryAnalyser
      */
     protected function analyzeJsonNode(array $node): array
     {
-        $issues = [];
         $table = $node['table_name'] ?? 'unknown';
         $accessType = $node['access_type'] ?? null;
         $rows = isset($node['rows_examined_per_scan']) ? (int) $node['rows_examined_per_scan'] : null;
@@ -224,22 +224,11 @@ class MySQLAnalyser implements QueryAnalyser
         $possibleKeys = $node['possible_keys'] ?? [];
         $key = $node['key'] ?? null;
 
-        // Full table scan
-        if ($accessType === 'ALL' && $this->exceedsRowThreshold($rows)) {
-            $issues[] = $this->fullTableScanIssue($table, $rows);
-        }
+        $issues = [
+            ...$this->analyzeScanType($accessType, $table, $rows),
+            ...$this->analyzeUnusedIndex($possibleKeys, $key, $table, $rows),
+        ];
 
-        // Full index scan (reads all index entries - often suboptimal)
-        if ($accessType === 'index' && $this->exceedsRowThreshold($rows)) {
-            $issues[] = $this->fullIndexScanIssue($table, $rows);
-        }
-
-        // Index available but not used (skip for small tables where optimizer may decide scan is faster)
-        if ($this->hasUnusedIndex($possibleKeys, $key, $rows)) {
-            $issues[] = $this->unusedIndexIssue($table, $rows);
-        }
-
-        // Low filter efficiency (examining many rows, keeping few)
         if ($filtered !== null && $filtered < 25 && $rows !== null && $rows > 1000) {
             $issues[] = QueryIssue::info(
                 message: "Low filter efficiency on '{$table}' ({$filtered}% rows kept)",
@@ -247,7 +236,6 @@ class MySQLAnalyser implements QueryAnalyser
             );
         }
 
-        // Check for filesort
         if (! empty($node['using_filesort'])) {
             $issues[] = QueryIssue::warning(
                 message: "Using filesort on '{$table}'",
@@ -255,7 +243,6 @@ class MySQLAnalyser implements QueryAnalyser
             );
         }
 
-        // Check for temporary table
         if (! empty($node['using_temporary_table'])) {
             $issues[] = QueryIssue::warning(
                 message: "Using temporary table on '{$table}'",
@@ -263,7 +250,6 @@ class MySQLAnalyser implements QueryAnalyser
             );
         }
 
-        // Cost threshold exceeded
         if ($this->maxCost !== null && $cost !== null && $cost > $this->maxCost) {
             $issues[] = new QueryIssue(
                 severity: Severity::Warning,
@@ -274,6 +260,42 @@ class MySQLAnalyser implements QueryAnalyser
         }
 
         return $issues;
+    }
+
+    /**
+     * Analyze access type for scan issues.
+     *
+     * @return array<int, QueryIssue>
+     */
+    protected function analyzeScanType(?string $accessType, string $table, ?int $rows): array
+    {
+        if ($accessType === 'ALL' && $this->exceedsRowThreshold($rows)) {
+            return [$this->fullTableScanIssue($table, $rows)];
+        }
+
+        if ($accessType === 'index' && $this->exceedsRowThreshold($rows)) {
+            return [$this->fullIndexScanIssue($table, $rows)];
+        }
+
+        return [];
+    }
+
+    /**
+     * Analyze unused index issues.
+     *
+     * @return array<int, QueryIssue>
+     */
+    protected function analyzeUnusedIndex(array|string|null $possibleKeys, ?string $key, string $table, ?int $rows): array
+    {
+        if ($this->hasUnusedIndex($possibleKeys, $key, $rows)) {
+            return [$this->unusedIndexIssue($table, $rows)];
+        }
+
+        if ($this->hasSuppressedUnusedIndex($possibleKeys, $key, $rows)) {
+            return [$this->suppressedUnusedIndexIssue($table, $rows)];
+        }
+
+        return [];
     }
 
     /**
@@ -309,7 +331,6 @@ class MySQLAnalyser implements QueryAnalyser
      */
     protected function analyzeTabularRow(array $row): array
     {
-        $issues = [];
         $table = $row['table'] ?? 'unknown';
         $type = $row['type'] ?? null;
         $rows = isset($row['rows']) ? (int) $row['rows'] : null;
@@ -317,22 +338,22 @@ class MySQLAnalyser implements QueryAnalyser
         $possibleKeys = $row['possible_keys'] ?? null;
         $key = $row['key'] ?? null;
 
-        // Full table scan
-        if ($type === 'ALL' && $this->exceedsRowThreshold($rows)) {
-            $issues[] = $this->fullTableScanIssue($table, $rows);
-        }
+        return [
+            ...$this->analyzeScanType($type, $table, $rows),
+            ...$this->analyzeUnusedIndex($possibleKeys, $key, $table, $rows),
+            ...$this->analyzeExtraColumn($extra, $table),
+        ];
+    }
 
-        // Full index scan
-        if ($type === 'index' && $this->exceedsRowThreshold($rows)) {
-            $issues[] = $this->fullIndexScanIssue($table, $rows);
-        }
+    /**
+     * Analyze the Extra column from tabular EXPLAIN output.
+     *
+     * @return array<int, QueryIssue>
+     */
+    protected function analyzeExtraColumn(string $extra, string $table): array
+    {
+        $issues = [];
 
-        // Index available but not used (skip for small tables where optimizer may decide scan is faster)
-        if ($this->hasUnusedIndex($possibleKeys, $key, $rows)) {
-            $issues[] = $this->unusedIndexIssue($table, $rows);
-        }
-
-        // Check Extra column for various issues
         $extraWarnings = [
             'Using filesort' => "Using filesort on '{$table}'",
             'Using temporary' => "Using temporary table on '{$table}'",
@@ -362,11 +383,22 @@ class MySQLAnalyser implements QueryAnalyser
 
     protected function hasUnusedIndex(array|string|null $possibleKeys, ?string $key, ?int $rows): bool
     {
-        if (empty($possibleKeys) || ! empty($key)) {
+        return $this->hasPotentialUnusedIndex($possibleKeys, $key)
+            && $this->exceedsRowThreshold($rows);
+    }
+
+    protected function hasSuppressedUnusedIndex(array|string|null $possibleKeys, ?string $key, ?int $rows): bool
+    {
+        if (! $this->hasPotentialUnusedIndex($possibleKeys, $key)) {
             return false;
         }
 
-        return $this->exceedsRowThreshold($rows);
+        return $rows !== null && $rows < $this->minRowsForScanWarning;
+    }
+
+    protected function hasPotentialUnusedIndex(array|string|null $possibleKeys, ?string $key): bool
+    {
+        return ! empty($possibleKeys) && empty($key);
     }
 
     protected function unusedIndexIssue(string $table, ?int $rows): QueryIssue
@@ -375,6 +407,18 @@ class MySQLAnalyser implements QueryAnalyser
             message: "Index available but not used on '{$table}'",
             table: $table,
             estimatedRows: $rows,
+        );
+    }
+
+    protected function suppressedUnusedIndexIssue(string $table, ?int $rows): QueryIssue
+    {
+        $rowDetail = $rows !== null
+            ? "rows {$rows} < {$this->minRowsForScanWarning}"
+            : "below {$this->minRowsForScanWarning} rows";
+
+        return QueryIssue::info(
+            message: "Index available but not used on '{$table}' ({$rowDetail}; small tables often scan faster). Seed more data or lower minRowsForScanWarning.",
+            table: $table,
         );
     }
 }

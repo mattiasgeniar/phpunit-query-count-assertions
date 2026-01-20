@@ -225,6 +225,7 @@ Issues are classified by severity and shown with prefixes in the output:
 | Info | `[INFO]` | Informational notes (low filter efficiency, co-routine usage) |
 
 By default, only errors and warnings cause assertion failures.
+Informational issues are printed as `[INFO]` notices (non-failing) so they're visible even when tests pass.
 
 ### MySQL / MariaDB detects
 
@@ -250,7 +251,7 @@ By default, only errors and warnings cause assertion failures.
 
 ### Small table optimization
 
-Full table scans, full index scans, and "index available but not used" warnings on tables with fewer than 100 rows are ignored by default, since scanning small tables is often faster than using an index. MySQL's query optimizer deliberately skips indexes on tiny tables. See [Configurable thresholds](#configurable-thresholds) to adjust this.
+Full table scans, full index scans, and "index available but not used" warnings on tables with fewer than 10 rows are ignored by default, since scanning tiny tables is often faster than using an index. MySQL's docs note this is common for tables with fewer than 10 rows: https://dev.mysql.com/doc/refman/8.4/en/table-scan-avoidance.html. See [Configurable thresholds](#configurable-thresholds) to adjust this.
 
 ## Duplicate query detection
 
@@ -465,7 +466,7 @@ class YourTest extends TestCase
     {
         parent::setUp();
 
-        // Flag full table scans only on tables with 500+ rows (default: 100)
+        // Flag full table scans only on tables with 500+ rows (default: 10)
         self::registerQueryAnalyser(
             (new MySQLAnalyser)->withMinRowsForScanWarning(500)
         );
@@ -482,7 +483,7 @@ class YourTest extends TestCase
 
 | Method | Default | Description |
 |--------|---------|-------------|
-| `withMinRowsForScanWarning(int)` | 100 | Minimum rows to flag full table scans, full index scans, and unused index warnings |
+| `withMinRowsForScanWarning(int)` | 10 | Minimum rows to flag full table scans, full index scans, and unused index warnings |
 | `withMaxCost(float)` | null (disabled) | Maximum query cost before flagging as a warning |
 
 ## Custom analysers

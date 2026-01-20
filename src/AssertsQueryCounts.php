@@ -256,7 +256,7 @@ trait AssertsQueryCounts
         $this->trackQueries();
     }
 
-    private static function resetEfficiencyTracking(): void
+    private static function resetTrackingState(): void
     {
         self::$lazyLoadingViolations = [];
         self::$duplicateQueries = [];
@@ -390,6 +390,10 @@ trait AssertsQueryCounts
         return null;
     }
 
+    /**
+     * @param  array<int, array{query: string, bindings?: array, time?: float}>  $queries
+     * @return array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}>
+     */
     private function findDuplicateQueries(array $queries): array
     {
         $seen = [];
@@ -689,6 +693,7 @@ trait AssertsQueryCounts
 
         self::$indexAnalysisResults = [];
         $issues = [];
+        $infoIssues = [];
         $connection = DB::connection();
         $locationOffsets = [];
 
@@ -703,6 +708,20 @@ trait AssertsQueryCounts
 
             $explainResults = $analyser->explain($connection, $sql, $bindings);
             $queryIssues = $analyser->analyzeIndexUsage($explainResults, $sql, $connection);
+
+            $informationalIssues = array_filter(
+                $queryIssues,
+                fn (QueryIssue $issue) => $issue->severity === Severity::Info
+            );
+
+            if (! empty($informationalIssues)) {
+                $infoIssues[] = [
+                    'query' => $sql,
+                    'bindings' => $bindings,
+                    'issues' => $informationalIssues,
+                    'locations' => $locations,
+                ];
+            }
 
             // Filter by severity
             $filteredIssues = array_filter(
@@ -727,19 +746,21 @@ trait AssertsQueryCounts
             }
         }
 
+        $this->reportIndexInfoIssues($infoIssues);
+
         return $issues;
     }
 
     /**
      * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array{file: string, line: int}>}>  $issues
      */
-    private function formatIndexFailureMessage(array $issues): string
+    private function formatIndexIssuesMessage(array $issues, string $header, string $emptyMessage): string
     {
         if (empty($issues)) {
-            return 'All queries use indexes.';
+            return $emptyMessage;
         }
 
-        $message = 'Queries with index issues detected:';
+        $message = $header;
 
         foreach ($issues as $index => $issue) {
             $number = $index + 1;
@@ -764,6 +785,51 @@ trait AssertsQueryCounts
         return $message;
     }
 
+    /**
+     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array{file: string, line: int}>}>  $issues
+     */
+    private function reportIndexInfoIssues(array $issues): void
+    {
+        if (empty($issues)) {
+            return;
+        }
+
+        $message = $this->formatIndexIssuesMessage(
+            $issues,
+            'Query index info (non-failing):',
+            ''
+        );
+
+        $this->emitInfoOutput($message);
+    }
+
+    private function emitInfoOutput(string $message): void
+    {
+        $output = PHP_EOL . '[INFO] ' . $message . PHP_EOL;
+
+        if (defined('STDERR')) {
+            fwrite(STDERR, $output);
+            return;
+        }
+
+        echo $output;
+    }
+
+    /**
+     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array{file: string, line: int}>}>  $issues
+     */
+    private function formatIndexFailureMessage(array $issues): string
+    {
+        return $this->formatIndexIssuesMessage(
+            $issues,
+            'Queries with index issues detected:',
+            'All queries use indexes.'
+        );
+    }
+
+    /**
+     * @return array<int, array{model: string, relation: string}>
+     */
     private function collectLazyLoadingViolations(Closure $closure): array
     {
         self::$lazyLoadingViolations = [];
@@ -860,12 +926,14 @@ trait AssertsQueryCounts
 
     public function trackQueries(): void
     {
-        self::resetEfficiencyTracking();
+        self::resetTrackingState();
         DB::flushQueryLog();
         DB::enableQueryLog();
+
         $connection = DB::connection();
         self::$trackingConnectionName = $connection->getName();
         self::$currentTrackingSession = uniqid('tracking_', true);
+
         self::enableStackTraceCapture();
         self::captureLazyLoadingState();
         self::enableLazyLoadingTracking();
