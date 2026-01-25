@@ -403,27 +403,21 @@ trait AssertsQueryCounts
     private function findDuplicateQueries(array $queries): array
     {
         $seen = [];
-        self::$duplicateQueries = [];
 
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
             $key = self::buildQuerySignature($sql, $bindings);
 
-            if (! isset($seen[$key])) {
-                $seen[$key] = [
-                    'count' => 0,
-                    'query' => $sql,
-                    'bindings' => $bindings,
-                ];
-            }
+            $seen[$key] ??= ['count' => 0, 'query' => $sql, 'bindings' => $bindings];
             $seen[$key]['count']++;
         }
 
+        self::$duplicateQueries = [];
+
         foreach ($seen as $key => $data) {
             if ($data['count'] > 1) {
-                $data['locations'] = self::$queryStackTraces[$key] ?? [];
-                self::$duplicateQueries[$key] = $data;
+                self::$duplicateQueries[$key] = [...$data, 'locations' => self::$queryStackTraces[$key] ?? []];
             }
         }
 
