@@ -583,4 +583,77 @@ class AssertsQueryCountsTest extends TestCase
             DB::select('SELECT * FROM sqlite_master WHERE type = "table"');
         }
     }
+
+    #[Test]
+    public function it_tracks_queries_across_multiple_connections(): void
+    {
+        $this->trackQueries();
+
+        DB::select('SELECT 1');
+        DB::connection('replica')->select('SELECT 2');
+
+        $queries = self::getQueriesExecuted();
+
+        $this->assertCount(2, $queries);
+        $this->assertEquals('sqlite', $queries[0]['connection']);
+        $this->assertEquals('replica', $queries[1]['connection']);
+    }
+
+    #[Test]
+    public function it_can_filter_to_specific_connection(): void
+    {
+        $this->trackQueries('sqlite');
+
+        DB::select('SELECT 1');
+        DB::connection('replica')->select('SELECT 2');
+        DB::select('SELECT 3');
+
+        $queries = self::getQueriesExecuted();
+
+        $this->assertCount(2, $queries);
+        $this->assertEquals('SELECT 1', $queries[0]['query']);
+        $this->assertEquals('SELECT 3', $queries[1]['query']);
+    }
+
+    #[Test]
+    public function it_can_filter_to_multiple_connections(): void
+    {
+        $this->trackQueries(['sqlite', 'replica']);
+
+        DB::select('SELECT 1');
+        DB::connection('replica')->select('SELECT 2');
+
+        $queries = self::getQueriesExecuted();
+
+        $this->assertCount(2, $queries);
+    }
+
+    #[Test]
+    public function it_includes_connection_name_in_tracked_queries(): void
+    {
+        $this->trackQueries();
+
+        DB::select('SELECT 1');
+
+        $queries = self::getQueriesExecuted();
+
+        $this->assertArrayHasKey('connection', $queries[0]);
+        $this->assertEquals('sqlite', $queries[0]['connection']);
+    }
+
+    #[Test]
+    public function it_tracks_only_replica_connection_when_specified(): void
+    {
+        $this->trackQueries('replica');
+
+        DB::select('SELECT 1');
+        DB::connection('replica')->select('SELECT 2');
+        DB::select('SELECT 3');
+
+        $queries = self::getQueriesExecuted();
+
+        $this->assertCount(1, $queries);
+        $this->assertEquals('SELECT 2', $queries[0]['query']);
+        $this->assertEquals('replica', $queries[0]['connection']);
+    }
 }

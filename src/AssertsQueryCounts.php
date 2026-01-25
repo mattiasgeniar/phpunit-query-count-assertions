@@ -4,17 +4,24 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Enums\Severity;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\SQLiteAnalyser;
-use PDO;
 use ReflectionProperty;
 
 trait AssertsQueryCounts
 {
+    private const STACK_TRACE_SKIP_PATTERNS = [
+        '/vendor\/laravel\/framework/',
+        '/vendor\/illuminate/',
+        '/AssertsQueryCounts\.php$/',
+        '/vendor\/phpunit/',
+    ];
+
     private static array $lazyLoadingViolations = [];
 
     /**
@@ -41,14 +48,23 @@ trait AssertsQueryCounts
     private static ?string $currentTrackingSession = null;
 
     /**
-     * Connection ID where the stack trace listener was registered.
+     * Hash of the app instance where listener was registered, to detect app refreshes in tests.
      */
-    private static ?int $stackTraceListenerConnectionId = null;
+    private static ?string $listenerAppHash = null;
 
     /**
-     * Connection name being tracked, to avoid cross-connection noise.
+     * Connections to track (null = all connections).
+     *
+     * @var array<string>|null
      */
-    private static ?string $trackingConnectionName = null;
+    private static ?array $connectionsToTrack = null;
+
+    /**
+     * Tracked queries across all or specified connections.
+     *
+     * @var array<int, array{query: string, bindings: array, time: float, connection: string}>
+     */
+    private static array $trackedQueries = [];
 
     /**
      * Registered query analysers.
@@ -238,7 +254,7 @@ trait AssertsQueryCounts
     {
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
             $queries = self::getQueriesExecuted();
-            $totalTime = $this->calculateTotalQueryTime($queries);
+            $totalTime = self::getTotalQueryTime();
 
             $this->assertLessThanOrEqual(
                 $maxMilliseconds,
@@ -262,7 +278,8 @@ trait AssertsQueryCounts
         self::$duplicateQueries = [];
         self::$indexAnalysisResults = [];
         self::$queryStackTraces = [];
-        self::$trackingConnectionName = null;
+        self::$trackedQueries = [];
+        self::$connectionsToTrack = null;
         self::$currentTrackingSession = null;
     }
 
@@ -335,8 +352,6 @@ trait AssertsQueryCounts
                 }
             }
 
-            DB::flushQueryLog();
-
             $this->assertEmpty(
                 $issues,
                 "Query efficiency issues detected:\n\n" . implode("\n\n---\n\n", $issues)
@@ -366,14 +381,19 @@ trait AssertsQueryCounts
         self::$queryAnalysers[] = $analyser;
     }
 
-    private function getDriverName(): string
+    private function getDriverName(?string $connectionName = null): string
     {
-        return DB::connection()->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
+        return DB::connection($connectionName)->getDriverName();
     }
 
     private function getQueryAnalyser(): ?QueryAnalyser
     {
-        $driver = $this->getDriverName();
+        return $this->getQueryAnalyserForConnection(null);
+    }
+
+    private function getQueryAnalyserForConnection(?string $connectionName): ?QueryAnalyser
+    {
+        $driver = $this->getDriverName($connectionName);
 
         $analysers = [
             ...self::$queryAnalysers,
@@ -397,27 +417,21 @@ trait AssertsQueryCounts
     private function findDuplicateQueries(array $queries): array
     {
         $seen = [];
-        self::$duplicateQueries = [];
 
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
             $key = self::buildQuerySignature($sql, $bindings);
 
-            if (! isset($seen[$key])) {
-                $seen[$key] = [
-                    'count' => 0,
-                    'query' => $sql,
-                    'bindings' => $bindings,
-                ];
-            }
+            $seen[$key] ??= ['count' => 0, 'query' => $sql, 'bindings' => $bindings];
             $seen[$key]['count']++;
         }
 
+        self::$duplicateQueries = [];
+
         foreach ($seen as $key => $data) {
             if ($data['count'] > 1) {
-                $data['locations'] = self::$queryStackTraces[$key] ?? [];
-                self::$duplicateQueries[$key] = $data;
+                self::$duplicateQueries[$key] = [...$data, 'locations' => self::$queryStackTraces[$key] ?? []];
             }
         }
 
@@ -582,11 +596,6 @@ trait AssertsQueryCounts
         return $message;
     }
 
-    private function calculateTotalQueryTime(array $queries): float
-    {
-        return array_sum(array_column($queries, 'time'));
-    }
-
     private function formatTotalTimeFailureMessage(array $queries, float $totalTime, float $maxMilliseconds): string
     {
         $roundedTotalTime = round($totalTime, 2);
@@ -613,9 +622,9 @@ trait AssertsQueryCounts
 
     private function analyzeQueriesForRowCount(array $queries, int $maxRows): array
     {
-        $analyser = $this->getQueryAnalyser();
+        $defaultAnalyser = $this->getQueryAnalyser();
 
-        if ($analyser === null || ! $analyser->supportsRowCounting()) {
+        if ($defaultAnalyser === null || ! $defaultAnalyser->supportsRowCounting()) {
             $driver = $this->getDriverName();
             $this->markTestSkipped("Row count analysis not supported for driver: {$driver}");
 
@@ -623,12 +632,14 @@ trait AssertsQueryCounts
         }
 
         $issues = [];
-        $connection = DB::connection();
         $locationOffsets = [];
 
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
+            $connectionName = $query['connection'] ?? null;
+            $connection = DB::connection($connectionName);
+            $analyser = $this->getQueryAnalyserForConnection($connectionName) ?? $defaultAnalyser;
             $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
 
             if (! $analyser->canExplain($sql)) {
@@ -682,9 +693,9 @@ trait AssertsQueryCounts
      */
     private function analyzeQueriesForIndexUsage(array $queries, Severity $minSeverity = Severity::Warning): array
     {
-        $analyser = $this->getQueryAnalyser();
+        $defaultAnalyser = $this->getQueryAnalyser();
 
-        if ($analyser === null) {
+        if ($defaultAnalyser === null) {
             $driver = $this->getDriverName();
             $this->markTestSkipped("Index analysis not supported for driver: {$driver}. See registerQueryAnalyser() to add support.");
 
@@ -694,12 +705,14 @@ trait AssertsQueryCounts
         self::$indexAnalysisResults = [];
         $issues = [];
         $infoIssues = [];
-        $connection = DB::connection();
         $locationOffsets = [];
 
         foreach ($queries as $query) {
             $sql = $query['query'];
             $bindings = $query['bindings'] ?? [];
+            $connectionName = $query['connection'] ?? null;
+            $connection = DB::connection($connectionName);
+            $analyser = $this->getQueryAnalyserForConnection($connectionName) ?? $defaultAnalyser;
             $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
 
             if (! $analyser->canExplain($sql)) {
@@ -809,11 +822,9 @@ trait AssertsQueryCounts
 
         if (defined('STDERR')) {
             fwrite(STDERR, $output);
-
-            return;
+        } else {
+            echo $output;
         }
-
-        echo $output;
     }
 
     /**
@@ -889,7 +900,6 @@ trait AssertsQueryCounts
             $closure();
             $assertion();
         } finally {
-            DB::flushQueryLog();
             self::$currentTrackingSession = null;
             self::restoreLazyLoadingState();
         }
@@ -925,49 +935,56 @@ trait AssertsQueryCounts
         return $formatted;
     }
 
-    public function trackQueries(): void
+    /**
+     * Start tracking database queries across one or more connections.
+     *
+     * @param  array<string>|string|null  $connections  Connection name(s) to track, or null to track all connections
+     */
+    public function trackQueries(array|string|null $connections = null): void
     {
         self::resetTrackingState();
-        DB::flushQueryLog();
-        DB::enableQueryLog();
 
-        $connection = DB::connection();
-        self::$trackingConnectionName = $connection->getName();
+        self::$connectionsToTrack = is_string($connections) ? [$connections] : $connections;
         self::$currentTrackingSession = uniqid('tracking_', true);
 
-        self::enableStackTraceCapture();
+        self::enableGlobalQueryListener();
         self::captureLazyLoadingState();
         self::enableLazyLoadingTracking();
     }
 
-    private static function enableStackTraceCapture(): void
+    private static function enableGlobalQueryListener(): void
     {
-        $connection = DB::connection();
-        $connectionId = spl_object_id($connection);
+        $currentAppHash = (string) spl_object_id(app());
 
-        if (self::$stackTraceListenerConnectionId === $connectionId) {
+        if (self::$listenerAppHash === $currentAppHash) {
             return;
         }
 
-        self::$stackTraceListenerConnectionId = $connectionId;
+        self::$listenerAppHash = $currentAppHash;
 
-        $connection->listen(function ($query) {
+        DB::listen(function (QueryExecuted $query) {
             if (self::$currentTrackingSession === null) {
                 return;
             }
 
-            $connectionName = $query->connectionName ?? null;
-            if (self::$trackingConnectionName !== null && $connectionName !== self::$trackingConnectionName) {
+            $connectionName = $query->connectionName ?? DB::getDefaultConnection();
+
+            if (self::$connectionsToTrack !== null
+                && ! in_array($connectionName, self::$connectionsToTrack, true)) {
                 return;
             }
+
+            self::$trackedQueries[] = [
+                'query' => $query->sql,
+                'bindings' => $query->bindings,
+                'time' => $query->time ?? 0.0,
+                'connection' => $connectionName,
+            ];
 
             $key = self::buildQuerySignature($query->sql, $query->bindings);
             $trace = self::captureRelevantStackTrace();
 
-            if (! isset(self::$queryStackTraces[$key])) {
-                self::$queryStackTraces[$key] = [];
-            }
-
+            self::$queryStackTraces[$key] ??= [];
             self::$queryStackTraces[$key][] = $trace;
         });
     }
@@ -980,14 +997,6 @@ trait AssertsQueryCounts
     private static function captureRelevantStackTrace(): array
     {
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 50);
-
-        $skipPatterns = [
-            '/vendor\/laravel\/framework/',
-            '/vendor\/illuminate/',
-            '/AssertsQueryCounts\.php$/',
-            '/vendor\/phpunit/',
-        ];
-
         $fallback = ['file' => 'unknown', 'line' => 0];
 
         foreach ($trace as $frame) {
@@ -1003,7 +1012,7 @@ trait AssertsQueryCounts
             $file = $frame['file'];
             $isInternal = false;
 
-            foreach ($skipPatterns as $pattern) {
+            foreach (self::STACK_TRACE_SKIP_PATTERNS as $pattern) {
                 if (preg_match($pattern, $file)) {
                     $isInternal = true;
                     break;
@@ -1018,9 +1027,12 @@ trait AssertsQueryCounts
         return $fallback;
     }
 
+    /**
+     * @return array<int, array{query: string, bindings: array, time: float, connection: string}>
+     */
     public static function getQueriesExecuted(): array
     {
-        return DB::getQueryLog();
+        return self::$trackedQueries;
     }
 
     public static function getQueryCount(): int
