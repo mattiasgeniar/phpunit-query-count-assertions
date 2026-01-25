@@ -10,7 +10,6 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\SQLiteAnalyser;
-use PDO;
 use ReflectionProperty;
 
 trait AssertsQueryCounts
@@ -375,7 +374,7 @@ trait AssertsQueryCounts
 
     private function getDriverName(): string
     {
-        return DB::connection()->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
+        return DB::connection()->getDriverName();
     }
 
     private function getQueryAnalyser(): ?QueryAnalyser
