@@ -244,7 +244,7 @@ trait AssertsQueryCounts
     {
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
             $queries = self::getQueriesExecuted();
-            $totalTime = $this->calculateTotalQueryTime($queries);
+            $totalTime = self::getTotalQueryTime();
 
             $this->assertLessThanOrEqual(
                 $maxMilliseconds,
@@ -586,11 +586,6 @@ trait AssertsQueryCounts
         }
 
         return $message;
-    }
-
-    private function calculateTotalQueryTime(array $queries): float
-    {
-        return array_sum(array_column($queries, 'time'));
     }
 
     private function formatTotalTimeFailureMessage(array $queries, float $totalTime, float $maxMilliseconds): string
