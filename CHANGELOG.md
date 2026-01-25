@@ -65,15 +65,30 @@ Now there's just one method that does everything. If you only need query counts,
 
 ## Unreleased
 
+### Added
+
+- **Multi-connection support:** `trackQueries()` now tracks queries across ALL database connections by default using `DB::listen()`. Previously only the default connection was tracked. This fixes the issue where queries on named connections (like 'replica', 'read', 'write') were not captured.
+- New optional parameter to filter tracking to specific connections:
+  ```php
+  $this->trackQueries();                          // Track all connections (new default)
+  $this->trackQueries('replica');                 // Track only 'replica' connection
+  $this->trackQueries(['mysql', 'replica']);      // Track multiple specific connections
+  ```
+- Tracked queries now include a `connection` key indicating which connection executed each query.
+
 ### Changed
 
 - **Breaking:** `trackQueries()` is now an instance method. Change `self::trackQueries()` to `$this->trackQueries()`.
+- **Breaking:** `trackQueries()` now tracks all connections by default instead of just the default connection. If you relied on the previous behavior of only tracking the default connection, pass the connection name explicitly: `$this->trackQueries('mysql')`.
 - Consolidated `trackQueriesForEfficiency()` into `trackQueries()`. The single `trackQueries()` method now enables all tracking features including N+1/lazy loading detection. `trackQueriesForEfficiency()` is deprecated and will be removed in the next major version.
 - Lowered the default MySQL `minRowsForScanWarning` threshold to 10 (aligns with MySQL docs on tiny tables).
 - Emit INFO-level index analysis notices by default (non-failing) to surface suppressed index issues.
+- Replaced per-connection query logging with a global `DB::listen()` callback for more reliable cross-connection tracking.
+- Simplified internal implementation by removing redundant code and using modern PHP features (null coalescing assignment, typed properties).
 
 ### Fixed
 
+- **Fixed:** Queries on non-default connections (e.g., 'replica') are now properly tracked ([#16](https://github.com/mattiasgeniar/phpunit-query-count-assertions/issues/16))
 - Skip full index scan warnings for small tables (fewer than 10 rows) where MySQL optimizer prefers scans over seeks
 - Skip unused index warnings for small tables where MySQL optimizer prefers full scans (fewer than 10 rows)
 

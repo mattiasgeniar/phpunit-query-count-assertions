@@ -105,6 +105,39 @@ class YourTest extends TestCase
 }
 ```
 
+## Multi-connection support
+
+By default, `trackQueries()` captures queries from **all database connections** — not just the default one. This is useful when your application uses read replicas, separate analytics databases, or tenant-specific connections.
+
+```php
+// Track all connections (default)
+$this->trackQueries();
+
+DB::select('SELECT 1');                         // Tracked
+DB::connection('replica')->select('SELECT 2');  // Also tracked
+
+$queries = self::getQueriesExecuted();
+// $queries[0]['connection'] === 'mysql'
+// $queries[1]['connection'] === 'replica'
+```
+
+### Filtering to specific connections
+
+You can optionally filter to only track specific connection(s):
+
+```php
+// Track only the replica connection
+$this->trackQueries('replica');
+
+// Track multiple specific connections
+$this->trackQueries(['mysql', 'replica']);
+```
+
+This is useful when:
+- Your test setup runs queries on different connections that you don't want to count
+- You want to verify that specific queries go to the right connection
+- You're debugging connection routing in read/write split setups
+
 ## Failure messages
 
 Failed assertions show you the actual queries:
@@ -553,9 +586,9 @@ Custom analysers are checked before the built-in MySQL and SQLite analysers.
 These methods let you inspect query data for custom assertions or debugging:
 
 ```php
-// Get all executed queries with their SQL, bindings, and timing
+// Get all executed queries with their SQL, bindings, timing, and connection
 $queries = self::getQueriesExecuted();
-// Returns: [['query' => 'SELECT...', 'bindings' => [...], 'time' => 0.45], ...]
+// Returns: [['query' => 'SELECT...', 'bindings' => [...], 'time' => 0.45, 'connection' => 'mysql'], ...]
 
 // Get total number of queries executed
 $count = self::getQueryCount();
