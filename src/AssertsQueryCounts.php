@@ -804,11 +804,9 @@ trait AssertsQueryCounts
 
         if (defined('STDERR')) {
             fwrite(STDERR, $output);
-
-            return;
+        } else {
+            echo $output;
         }
-
-        echo $output;
     }
 
     /**
