@@ -15,6 +15,13 @@ use ReflectionProperty;
 
 trait AssertsQueryCounts
 {
+    private const STACK_TRACE_SKIP_PATTERNS = [
+        '/vendor\/laravel\/framework/',
+        '/vendor\/illuminate/',
+        '/AssertsQueryCounts\.php$/',
+        '/vendor\/phpunit/',
+    ];
+
     private static array $lazyLoadingViolations = [];
 
     /**
@@ -980,14 +987,6 @@ trait AssertsQueryCounts
     private static function captureRelevantStackTrace(): array
     {
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 50);
-
-        $skipPatterns = [
-            '/vendor\/laravel\/framework/',
-            '/vendor\/illuminate/',
-            '/AssertsQueryCounts\.php$/',
-            '/vendor\/phpunit/',
-        ];
-
         $fallback = ['file' => 'unknown', 'line' => 0];
 
         foreach ($trace as $frame) {
@@ -1003,7 +1002,7 @@ trait AssertsQueryCounts
             $file = $frame['file'];
             $isInternal = false;
 
-            foreach ($skipPatterns as $pattern) {
+            foreach (self::STACK_TRACE_SKIP_PATTERNS as $pattern) {
                 if (preg_match($pattern, $file)) {
                     $isInternal = true;
                     break;
