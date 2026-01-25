@@ -28,6 +28,13 @@ class TestCase extends Orchestra
             'database' => ':memory:',
             'prefix' => '',
         ]);
+
+        // Add a second connection for multi-connection testing
+        $app['config']->set('database.connections.replica', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+        ]);
     }
 
     protected function setUpDatabase(): void
