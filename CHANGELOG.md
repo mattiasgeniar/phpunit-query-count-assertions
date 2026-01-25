@@ -2,6 +2,10 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## Track queries across all connections by default - 2026-01-25
+
+**Full Changelog**: https://github.com/mattiasgeniar/phpunit-query-count-assertions/compare/1.2.1...1.2.3
+
 ## Cleanup version - 2026-01-18
 
 ### Simplify API by consolidating tracking methods
@@ -32,6 +36,7 @@ protected function setUp(): void
     $this->trackQueries();
 }
 
+
 ```
 **`trackQueriesForEfficiency()` is deprecated**
 
@@ -43,6 +48,7 @@ $this->trackQueriesForEfficiency();
 
 // After
 $this->trackQueries();
+
 
 ```
 #### Migration
@@ -105,6 +111,7 @@ $this->assertAllQueriesUseIndexes(function () {
 
 
 
+
 ```
 Supports MySQL, MariaDB, and SQLite. Detects full table scans, unused indexes, filesort, temporary tables, and more.
 
@@ -121,6 +128,7 @@ $this->assertNoDuplicateQueries(function () {
 
 
 
+
 ```
 ##### Query Timing Assertions
 
@@ -133,6 +141,7 @@ $this->assertTotalQueryTime(500, fn() => ...);  // Total time under 500ms
 
 
 
+
 ```
 ##### Row Count Threshold (MySQL/MariaDB)
 
@@ -140,6 +149,7 @@ Fail when queries examine too many rows:
 
 ```php
 $this->assertMaxRowsExamined(1000, fn() => User::where('status', 'active')->get());
+
 
 
 
@@ -157,6 +167,7 @@ $this->assertQueriesAreEfficient(function () {
 
 
 
+
 ```
 Or use `trackQueries()` in setUp/beforeEach for test-wide tracking.
 
@@ -166,6 +177,7 @@ Add support for additional databases:
 
 ```php
 AssertsQueryCounts::registerQueryAnalyser(new PostgresAnalyser());
+
 
 
 
