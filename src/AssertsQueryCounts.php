@@ -3,33 +3,22 @@
 namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Events\QueryExecuted;
-use Illuminate\Support\Facades\DB;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\LaravelDriver;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Enums\Severity;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\SQLiteAnalyser;
-use ReflectionProperty;
 
 trait AssertsQueryCounts
 {
-    private const STACK_TRACE_SKIP_PATTERNS = [
-        '/vendor\/laravel\/framework/',
-        '/vendor\/illuminate/',
-        '/AssertsQueryCounts\.php$/',
-        '/vendor\/phpunit/',
-    ];
+    /**
+     * The query driver implementation.
+     */
+    private static ?QueryDriverInterface $driver = null;
 
     private static array $lazyLoadingViolations = [];
-
-    /**
-     * Snapshot of lazy loading state to restore after efficiency tracking.
-     *
-     * @var array{prevention: bool, callback: callable|null}|null
-     */
-    private static ?array $lazyLoadingState = null;
 
     private static array $indexAnalysisResults = [];
 
@@ -48,18 +37,6 @@ trait AssertsQueryCounts
     private static ?string $currentTrackingSession = null;
 
     /**
-     * Hash of the app instance where listener was registered, to detect app refreshes in tests.
-     */
-    private static ?string $listenerAppHash = null;
-
-    /**
-     * Connections to track (null = all connections).
-     *
-     * @var array<string>|null
-     */
-    private static ?array $connectionsToTrack = null;
-
-    /**
      * Tracked queries across all or specified connections.
      *
      * @var array<int, array{query: string, bindings: array, time: float, connection: string}>
@@ -72,6 +49,36 @@ trait AssertsQueryCounts
      * @var array<int, QueryAnalyser>
      */
     private static array $queryAnalysers = [];
+
+    /**
+     * Set the query driver implementation.
+     *
+     * Use this to switch between Laravel, Doctrine, Phalcon, or custom drivers.
+     */
+    public static function useDriver(QueryDriverInterface $driver): void
+    {
+        self::$driver = $driver;
+    }
+
+    /**
+     * Get the current query driver, auto-detecting Laravel if none is set.
+     */
+    private static function getDriver(): QueryDriverInterface
+    {
+        if (self::$driver === null) {
+            // Auto-detect Laravel for backwards compatibility
+            if (class_exists(\Illuminate\Support\Facades\DB::class)) {
+                self::$driver = new LaravelDriver;
+            } else {
+                throw new \RuntimeException(
+                    'No query driver configured. Call useDriver() with a driver implementation, ' .
+                    'or install Laravel for auto-detection.'
+                );
+            }
+        }
+
+        return self::$driver;
+    }
 
     public function assertNoQueriesExecuted(?Closure $closure = null): void
     {
@@ -144,13 +151,19 @@ trait AssertsQueryCounts
     /**
      * Assert that no lazy loading occurs within the closure.
      *
-     * This leverages Laravel's built-in lazy loading prevention to detect N+1 queries.
+     * This leverages the driver's lazy loading detection mechanism.
+     * For Laravel, this uses Model::preventLazyLoading().
+     * For drivers that don't support lazy loading detection, this assertion passes silently.
      *
      * @see https://laravel.com/docs/eloquent-relationships#preventing-lazy-loading
      */
     public function assertNoLazyLoading(Closure $closure): void
     {
         $violations = $this->collectLazyLoadingViolations($closure);
+
+        if ($violations === null) {
+            return;
+        }
 
         $this->assertEmpty(
             $violations,
@@ -161,6 +174,10 @@ trait AssertsQueryCounts
     public function assertLazyLoadingCount(int $expectedCount, Closure $closure): void
     {
         $violations = $this->collectLazyLoadingViolations($closure);
+
+        if ($violations === null) {
+            return;
+        }
 
         $this->assertCount(
             $expectedCount,
@@ -279,49 +296,26 @@ trait AssertsQueryCounts
         self::$indexAnalysisResults = [];
         self::$queryStackTraces = [];
         self::$trackedQueries = [];
-        self::$connectionsToTrack = null;
         self::$currentTrackingSession = null;
     }
 
-    private static function enableLazyLoadingTracking(): void
+    /**
+     * Pause tracking temporarily (for internal EXPLAIN queries).
+     */
+    private static function pauseTracking(): ?string
     {
-        Model::preventLazyLoading();
-        Model::handleLazyLoadingViolationUsing(self::lazyLoadingViolationHandler());
+        $session = self::$currentTrackingSession;
+        self::$currentTrackingSession = null;
+
+        return $session;
     }
 
-    private static function captureLazyLoadingState(): void
+    /**
+     * Resume tracking after pause.
+     */
+    private static function resumeTracking(?string $session): void
     {
-        $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
-        $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
-
-        self::$lazyLoadingState = [
-            'prevention' => $preventionProperty->getValue(null),
-            'callback' => $callbackProperty->getValue(null),
-        ];
-    }
-
-    private static function restoreLazyLoadingState(): void
-    {
-        if (self::$lazyLoadingState === null) {
-            return;
-        }
-
-        $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
-        $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
-
-        $preventionProperty->setValue(null, self::$lazyLoadingState['prevention']);
-        $callbackProperty->setValue(null, self::$lazyLoadingState['callback']);
-        self::$lazyLoadingState = null;
-    }
-
-    private static function lazyLoadingViolationHandler(): Closure
-    {
-        return function (Model $model, string $relation): void {
-            self::$lazyLoadingViolations[] = [
-                'model' => $model::class,
-                'relation' => $relation,
-            ];
-        };
+        self::$currentTrackingSession = $session;
     }
 
     public function assertQueriesAreEfficient(?Closure $closure = null): void
@@ -357,7 +351,7 @@ trait AssertsQueryCounts
                 "Query efficiency issues detected:\n\n" . implode("\n\n---\n\n", $issues)
             );
         } finally {
-            self::restoreLazyLoadingState();
+            self::getDriver()->disableLazyLoadingDetection();
         }
     }
 
@@ -383,7 +377,7 @@ trait AssertsQueryCounts
 
     private function getDriverName(?string $connectionName = null): string
     {
-        return DB::connection($connectionName)->getDriverName();
+        return self::getDriver()->getConnection($connectionName)->getDriverName();
     }
 
     private function getQueryAnalyser(): ?QueryAnalyser
@@ -535,7 +529,7 @@ trait AssertsQueryCounts
     {
         // Try to make path relative to common project roots
         $basePaths = [
-            base_path() . DIRECTORY_SEPARATOR,
+            self::getDriver()->getBasePath() . DIRECTORY_SEPARATOR,
             getcwd() . DIRECTORY_SEPARATOR,
         ];
 
@@ -625,38 +619,42 @@ trait AssertsQueryCounts
         $defaultAnalyser = $this->getQueryAnalyser();
 
         if ($defaultAnalyser === null || ! $defaultAnalyser->supportsRowCounting()) {
-            $driver = $this->getDriverName();
-            $this->markTestSkipped("Row count analysis not supported for driver: {$driver}");
-
             return [];
         }
 
         $issues = [];
         $locationOffsets = [];
 
-        foreach ($queries as $query) {
-            $sql = $query['query'];
-            $bindings = $query['bindings'] ?? [];
-            $connectionName = $query['connection'] ?? null;
-            $connection = DB::connection($connectionName);
-            $analyser = $this->getQueryAnalyserForConnection($connectionName) ?? $defaultAnalyser;
-            $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
+        // Pause tracking to avoid counting internal EXPLAIN queries
+        $session = self::pauseTracking();
 
-            if (! $analyser->canExplain($sql)) {
-                continue;
+        try {
+            foreach ($queries as $query) {
+                $sql = $query['query'];
+                $bindings = $query['bindings'] ?? [];
+                $connectionName = $query['connection'] ?? null;
+                $connection = self::getDriver()->getConnection($connectionName);
+                $analyser = $this->getQueryAnalyserForConnection($connectionName) ?? $defaultAnalyser;
+                $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
+
+                if (! $analyser->canExplain($sql)) {
+                    continue;
+                }
+
+                $explainResults = $analyser->explain($connection, $sql, $bindings);
+                $totalRows = $analyser->getRowsExamined($explainResults);
+
+                if ($totalRows > $maxRows) {
+                    $issues[] = [
+                        'query' => $sql,
+                        'bindings' => $bindings,
+                        'rows' => $totalRows,
+                        'locations' => $locations,
+                    ];
+                }
             }
-
-            $explainResults = $analyser->explain($connection, $sql, $bindings);
-            $totalRows = $analyser->getRowsExamined($explainResults);
-
-            if ($totalRows > $maxRows) {
-                $issues[] = [
-                    'query' => $sql,
-                    'bindings' => $bindings,
-                    'rows' => $totalRows,
-                    'locations' => $locations,
-                ];
-            }
+        } finally {
+            self::resumeTracking($session);
         }
 
         return $issues;
@@ -696,9 +694,6 @@ trait AssertsQueryCounts
         $defaultAnalyser = $this->getQueryAnalyser();
 
         if ($defaultAnalyser === null) {
-            $driver = $this->getDriverName();
-            $this->markTestSkipped("Index analysis not supported for driver: {$driver}. See registerQueryAnalyser() to add support.");
-
             return [];
         }
 
@@ -707,56 +702,63 @@ trait AssertsQueryCounts
         $infoIssues = [];
         $locationOffsets = [];
 
-        foreach ($queries as $query) {
-            $sql = $query['query'];
-            $bindings = $query['bindings'] ?? [];
-            $connectionName = $query['connection'] ?? null;
-            $connection = DB::connection($connectionName);
-            $analyser = $this->getQueryAnalyserForConnection($connectionName) ?? $defaultAnalyser;
-            $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
+        // Pause tracking to avoid counting internal EXPLAIN queries
+        $session = self::pauseTracking();
 
-            if (! $analyser->canExplain($sql)) {
-                continue;
-            }
+        try {
+            foreach ($queries as $query) {
+                $sql = $query['query'];
+                $bindings = $query['bindings'] ?? [];
+                $connectionName = $query['connection'] ?? null;
+                $connection = self::getDriver()->getConnection($connectionName);
+                $analyser = $this->getQueryAnalyserForConnection($connectionName) ?? $defaultAnalyser;
+                $locations = $this->takeNextQueryLocation($sql, $bindings, $locationOffsets);
 
-            $explainResults = $analyser->explain($connection, $sql, $bindings);
-            $queryIssues = $analyser->analyzeIndexUsage($explainResults, $sql, $connection);
+                if (! $analyser->canExplain($sql)) {
+                    continue;
+                }
 
-            $informationalIssues = array_filter(
-                $queryIssues,
-                fn (QueryIssue $issue) => $issue->severity === Severity::Info
-            );
+                $explainResults = $analyser->explain($connection, $sql, $bindings);
+                $queryIssues = $analyser->analyzeIndexUsage($explainResults, $sql, $connection);
 
-            if (! empty($informationalIssues)) {
-                $infoIssues[] = [
+                $informationalIssues = array_filter(
+                    $queryIssues,
+                    fn (QueryIssue $issue) => $issue->severity === Severity::Info
+                );
+
+                if (! empty($informationalIssues)) {
+                    $infoIssues[] = [
+                        'query' => $sql,
+                        'bindings' => $bindings,
+                        'issues' => $informationalIssues,
+                        'locations' => $locations,
+                    ];
+                }
+
+                // Filter by severity
+                $filteredIssues = array_filter(
+                    $queryIssues,
+                    fn (QueryIssue $issue) => $issue->meetsThreshold($minSeverity)
+                );
+
+                self::$indexAnalysisResults[] = [
                     'query' => $sql,
                     'bindings' => $bindings,
-                    'issues' => $informationalIssues,
-                    'locations' => $locations,
+                    'issues' => $queryIssues,
+                    'explain' => $explainResults,
                 ];
+
+                if (! empty($filteredIssues)) {
+                    $issues[] = [
+                        'query' => $sql,
+                        'bindings' => $bindings,
+                        'issues' => $filteredIssues,
+                        'locations' => $locations,
+                    ];
+                }
             }
-
-            // Filter by severity
-            $filteredIssues = array_filter(
-                $queryIssues,
-                fn (QueryIssue $issue) => $issue->meetsThreshold($minSeverity)
-            );
-
-            self::$indexAnalysisResults[] = [
-                'query' => $sql,
-                'bindings' => $bindings,
-                'issues' => $queryIssues,
-                'explain' => $explainResults,
-            ];
-
-            if (! empty($filteredIssues)) {
-                $issues[] = [
-                    'query' => $sql,
-                    'bindings' => $bindings,
-                    'issues' => $filteredIssues,
-                    'locations' => $locations,
-                ];
-            }
+        } finally {
+            self::resumeTracking($session);
         }
 
         $this->reportIndexInfoIssues($infoIssues);
@@ -840,34 +842,29 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @return array<int, array{model: string, relation: string}>
+     * Collect lazy loading violations.
+     *
+     * @return array<int, array{model: string, relation: string}>|null Returns null if not supported
      */
-    private function collectLazyLoadingViolations(Closure $closure): array
+    private function collectLazyLoadingViolations(Closure $closure): ?array
     {
         self::$lazyLoadingViolations = [];
 
-        $this->withLazyLoadingTracking($closure);
+        $supported = self::getDriver()->enableLazyLoadingDetection(function (array $violation) {
+            self::$lazyLoadingViolations[] = $violation;
+        });
 
-        return self::$lazyLoadingViolations;
-    }
-
-    private function withLazyLoadingTracking(Closure $closure): void
-    {
-        $preventionProperty = new ReflectionProperty(Model::class, 'modelsShouldPreventLazyLoading');
-        $callbackProperty = new ReflectionProperty(Model::class, 'lazyLoadingViolationCallback');
-
-        $originalPrevention = $preventionProperty->getValue(null);
-        $originalCallback = $callbackProperty->getValue(null);
-
-        Model::preventLazyLoading();
-        Model::handleLazyLoadingViolationUsing(self::lazyLoadingViolationHandler());
+        if (! $supported) {
+            return null;
+        }
 
         try {
             $closure();
         } finally {
-            $preventionProperty->setValue(null, $originalPrevention);
-            $callbackProperty->setValue(null, $originalCallback);
+            self::getDriver()->disableLazyLoadingDetection();
         }
+
+        return self::$lazyLoadingViolations;
     }
 
     private function formatLazyLoadingFailureMessage(array $violations, ?string $prefix = null): string
@@ -901,7 +898,7 @@ trait AssertsQueryCounts
             $assertion();
         } finally {
             self::$currentTrackingSession = null;
-            self::restoreLazyLoadingState();
+            self::getDriver()->disableLazyLoadingDetection();
         }
     }
 
@@ -944,57 +941,38 @@ trait AssertsQueryCounts
     {
         self::resetTrackingState();
 
-        self::$connectionsToTrack = is_string($connections) ? [$connections] : $connections;
+        $connectionsArray = is_string($connections) ? [$connections] : $connections;
         self::$currentTrackingSession = uniqid('tracking_', true);
 
-        self::enableGlobalQueryListener();
-        self::captureLazyLoadingState();
-        self::enableLazyLoadingTracking();
-    }
+        $driver = self::getDriver();
+        $skipPatterns = $driver->getStackTraceSkipPatterns();
 
-    private static function enableGlobalQueryListener(): void
-    {
-        $currentAppHash = (string) spl_object_id(app());
-
-        if (self::$listenerAppHash === $currentAppHash) {
-            return;
-        }
-
-        self::$listenerAppHash = $currentAppHash;
-
-        DB::listen(function (QueryExecuted $query) {
+        $driver->startListening(function (array $query) use ($skipPatterns) {
             if (self::$currentTrackingSession === null) {
                 return;
             }
 
-            $connectionName = $query->connectionName ?? DB::getDefaultConnection();
+            self::$trackedQueries[] = $query;
 
-            if (self::$connectionsToTrack !== null
-                && ! in_array($connectionName, self::$connectionsToTrack, true)) {
-                return;
-            }
-
-            self::$trackedQueries[] = [
-                'query' => $query->sql,
-                'bindings' => $query->bindings,
-                'time' => $query->time ?? 0.0,
-                'connection' => $connectionName,
-            ];
-
-            $key = self::buildQuerySignature($query->sql, $query->bindings);
-            $trace = self::captureRelevantStackTrace();
+            $key = self::buildQuerySignature($query['query'], $query['bindings']);
+            $trace = self::captureRelevantStackTrace($skipPatterns);
 
             self::$queryStackTraces[$key] ??= [];
             self::$queryStackTraces[$key][] = $trace;
+        }, $connectionsArray);
+
+        $driver->enableLazyLoadingDetection(function (array $violation) {
+            self::$lazyLoadingViolations[] = $violation;
         });
     }
 
     /**
      * Capture a stack trace filtered to show only relevant application code.
      *
+     * @param  array<int, string>  $skipPatterns  Regex patterns to skip
      * @return array{file: string, line: int}
      */
-    private static function captureRelevantStackTrace(): array
+    private static function captureRelevantStackTrace(array $skipPatterns): array
     {
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 50);
         $fallback = ['file' => 'unknown', 'line' => 0];
@@ -1012,7 +990,7 @@ trait AssertsQueryCounts
             $file = $frame['file'];
             $isInternal = false;
 
-            foreach (self::STACK_TRACE_SKIP_PATTERNS as $pattern) {
+            foreach ($skipPatterns as $pattern) {
                 if (preg_match($pattern, $file)) {
                     $isInternal = true;
                     break;

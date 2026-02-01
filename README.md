@@ -1,4 +1,4 @@
-# Laravel query count assertions for PHPUnit
+# PHP query count assertions for PHPUnit
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/mattiasgeniar/phpunit-query-count-assertions.svg?style=flat-square)](https://packagist.org/packages/mattiasgeniar/phpunit-query-count-assertions)
 [![Total Downloads](https://img.shields.io/packagist/dt/mattiasgeniar/phpunit-query-count-assertions.svg?style=flat-square)](https://packagist.org/packages/mattiasgeniar/phpunit-query-count-assertions)
@@ -7,13 +7,26 @@
 
 Count and assert SQL queries in your tests. Catch N+1 problems, full table scans, duplicate queries, and slow queries before they hit production.
 
-Laravel only.
+Supports Laravel, Doctrine/Symfony, and Phalcon.
 
 ## Requirements
 
 - PHP 8.2+
-- Laravel 11 or 12
 - PHPUnit 11 or Pest 3
+- **Laravel 11/12**, **Doctrine DBAL 3/4**, or **Phalcon 5+**
+
+## Driver Compatibility
+
+| Feature | Laravel | Doctrine | Phalcon |
+|---------|:-------:|:--------:|:-------:|
+| Query counting | ✅ | ✅ | ✅ |
+| Query timing | ✅ | ✅ | ✅ |
+| Duplicate detection | ✅ | ✅ | ✅ |
+| Index analysis (EXPLAIN) | ✅ | ✅ | ✅ |
+| Row count analysis | ✅ | ✅ | ✅ |
+| Lazy loading detection | ✅ | ❌ | ❌ |
+
+**Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` pass silently on Doctrine and Phalcon since violations cannot be detected.
 
 ## Installation
 
@@ -49,6 +62,86 @@ class CertificateHealthCheckTest extends TestCase
 ```
 
 This catches N+1 queries, duplicate queries, and missing indexes in a single assertion. Your test setup (factories, seeders) stays outside the tracked block so it doesn't trigger false positives.
+
+## Framework Setup
+
+### Laravel (auto-detected)
+
+No configuration needed. The package auto-detects Laravel and uses `DB::listen()` for query tracking.
+
+### Doctrine / Symfony
+
+Doctrine requires middleware configured at connection creation:
+
+```php
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Configuration;
+use Doctrine\DBAL\Logging\Middleware;
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineDriver;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineQueryLogger;
+
+class YourTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    private static DoctrineDriver $doctrineDriver;
+
+    public static function setUpBeforeClass(): void
+    {
+        // Create driver and logger
+        self::$doctrineDriver = new DoctrineDriver();
+        $logger = new DoctrineQueryLogger(self::$doctrineDriver, 'default');
+
+        // Add middleware when creating connection
+        $config = new Configuration();
+        $config->setMiddlewares([new Middleware($logger)]);
+
+        $connection = DriverManager::getConnection($params, $config);
+        self::$doctrineDriver->registerConnection('default', $connection);
+
+        // Set the driver
+        self::useDriver(self::$doctrineDriver);
+    }
+
+    public function test_queries(): void
+    {
+        $this->trackQueries();
+        // ... your test code
+        $this->assertQueryCountMatches(2);
+    }
+}
+```
+
+### Phalcon
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\PhalconDriver;
+
+class YourTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Get DB adapter from DI and register with driver
+        $driver = new PhalconDriver();
+        $driver->registerConnection('default', $this->getDI()->get('db'));
+
+        self::useDriver($driver);
+    }
+
+    public function test_queries(): void
+    {
+        $this->trackQueries();
+        // ... your test code
+        $this->assertQueryCountMatches(2);
+    }
+}
+```
 
 ### What it catches
 
@@ -234,7 +327,7 @@ Queries with index issues detected:
 - **MariaDB** - Full support with tabular EXPLAIN
 - **SQLite** - Index analysis supported, row counting not available
 
-Other databases skip the assertion. See [Custom analysers](#custom-analysers) to add support for additional databases.
+Other databases pass silently. See [Custom analysers](#custom-analysers) to add support for additional databases.
 
 ### What gets analyzed
 
@@ -331,7 +424,7 @@ Queries examining more than 1000 rows:
        #1: tests/Feature/UserTest.php:42
 ```
 
-SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion is skipped.
+SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion passes silently.
 
 ## Query timing assertions
 
@@ -524,7 +617,7 @@ class YourTest extends TestCase
 Add support for additional databases by implementing the `QueryAnalyser` interface:
 
 ```php
-use Illuminate\Database\Connection;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\Concerns\ExplainsQueries;
@@ -538,12 +631,12 @@ class PostgreSQLAnalyser implements QueryAnalyser
         return $driver === 'pgsql';
     }
 
-    public function explain(Connection $connection, string $sql, array $bindings): array
+    public function explain(ConnectionInterface $connection, string $sql, array $bindings): array
     {
         return $connection->select('EXPLAIN (FORMAT JSON) ' . $sql, $bindings);
     }
 
-    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array
+    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?ConnectionInterface $connection = null): array
     {
         $issues = [];
 
