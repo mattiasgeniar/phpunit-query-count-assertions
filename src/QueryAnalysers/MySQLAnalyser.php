@@ -147,7 +147,12 @@ class MySQLAnalyser implements QueryAnalyser
             return [];
         }
 
-        $decoded = json_decode($result->EXPLAIN, true);
+        try {
+            $decoded = json_decode($result->EXPLAIN, true, 512, JSON_THROW_ON_ERROR);
+        } catch (Throwable $t) {
+            //@todo add error logging ?
+            return [];
+        }
 
         return is_array($decoded) ? $decoded : [];
     }
