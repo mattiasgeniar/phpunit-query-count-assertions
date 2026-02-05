@@ -361,12 +361,14 @@ class AssertsQueryCountsTest extends TestCase
         $this->assertArrayHasKey('locations', $first);
         $this->assertCount(2, $first['locations']);
 
-        // Each location should have file and line info
-        foreach ($first['locations'] as $location) {
-            $this->assertArrayHasKey('file', $location);
-            $this->assertArrayHasKey('line', $location);
-            $this->assertNotEmpty($location['file']);
-            $this->assertIsInt($location['line']);
+        // Each location is an array of frames (based on stackTraceDepth)
+        foreach ($first['locations'] as $frames) {
+            $this->assertNotEmpty($frames);
+            // Check the first frame has file and line info
+            $this->assertArrayHasKey('file', $frames[0]);
+            $this->assertArrayHasKey('line', $frames[0]);
+            $this->assertNotEmpty($frames[0]['file']);
+            $this->assertIsInt($frames[0]['line']);
         }
     }
 
