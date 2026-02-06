@@ -78,16 +78,24 @@ class PhalconConnection implements ConnectionInterface
     }
 
     /**
-     * Substitute named bindings directly into SQL.
+     * Substitute bindings directly into SQL for EXPLAIN queries.
      *
-     * This is safe for EXPLAIN queries since they are read-only and
-     * don't modify data. MySQL doesn't support parameterized LIMIT/OFFSET
-     * in prepared statements, so we must substitute values directly.
+     * This is only used for EXPLAIN queries which are read-only. MySQL doesn't
+     * support parameterized LIMIT/OFFSET in prepared statements, so we must
+     * substitute values directly.
+     *
+     * Known limitation: if the original SQL contains '?' inside string literals
+     * (e.g. SELECT 'Is this ok?' ...), positional replacement may match incorrectly.
+     * This is unlikely for EXPLAIN queries in practice.
      *
      * @param  array<int|string, mixed>  $bindings
      */
     private function substituteBindings(string $sql, array $bindings): string
     {
+        if (! $this->isExplainQuery($sql)) {
+            throw new \LogicException('substituteBindings() should only be used for EXPLAIN queries.');
+        }
+
         foreach ($bindings as $key => $value) {
             $placeholder = is_int($key) ? '?' : ':' . ltrim((string) $key, ':');
             $replacement = $this->formatBindingValue($value);
