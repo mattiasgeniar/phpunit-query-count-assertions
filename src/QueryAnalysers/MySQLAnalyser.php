@@ -149,8 +149,8 @@ class MySQLAnalyser implements QueryAnalyser
 
         try {
             $decoded = json_decode($result->EXPLAIN, true, 512, JSON_THROW_ON_ERROR);
-        } catch (Throwable $t) {
-            //@todo add error logging ?
+        } catch (Throwable) {
+            // JSON EXPLAIN failed; skip analysis for this query
             return [];
         }
 
