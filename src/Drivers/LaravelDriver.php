@@ -79,7 +79,7 @@ class LaravelDriver implements QueryDriverInterface
 
     public function getConnection(?string $name = null): ConnectionInterface
     {
-        $key = $name ?? 'default';
+        $key = $name ?? DB::getDefaultConnection();
 
         return $this->connectionWrappers[$key] ??= new LaravelConnection(DB::connection($name));
     }
