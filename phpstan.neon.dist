@@ -7,9 +7,10 @@ parameters:
     paths:
         - src
     ignoreErrors:
-        # Doctrine and Phalcon are optional dependencies - their classes aren't installed in dev
+        # Doctrine and Phalcon are optional dependencies - may or may not be installed
         -
             identifier: class.notFound
+            reportUnmatched: false
             paths:
                 - src/Drivers/DoctrineConnection.php
                 - src/Drivers/DoctrineDriver.php

@@ -543,6 +543,22 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
+    public function it_fails_efficient_queries_when_no_queries_were_tracked(): void
+    {
+        try {
+            $this->assertQueriesAreEfficient(function () {
+                // No queries executed
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('No queries were tracked', $message);
+            $this->assertStringContainsString('trackQueries()', $message);
+        }
+    }
+
+    #[Test]
     public function it_restores_lazy_loading_state_after_efficient_queries_assertion(): void
     {
         User::create(['name' => 'John']);

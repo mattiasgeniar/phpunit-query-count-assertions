@@ -7,7 +7,7 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Drivers;
 use Closure;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
-use Phalcon\Db\Adapter\AdapterInterface;
+use Phalcon\Db\Adapter\AbstractAdapter;
 use Phalcon\Events\Manager as EventsManager;
 
 /**
@@ -34,7 +34,7 @@ class PhalconDriver implements QueryDriverInterface
     /**
      * Registered connections.
      *
-     * @var array<string, AdapterInterface>
+     * @var array<string, AbstractAdapter>
      */
     private array $connections = [];
 
@@ -72,13 +72,13 @@ class PhalconDriver implements QueryDriverInterface
     /**
      * Register a Phalcon database adapter for tracking.
      */
-    public function registerConnection(string $name, AdapterInterface $adapter): void
+    public function registerConnection(string $name, AbstractAdapter $adapter): void
     {
         $this->connections[$name] = $adapter;
         $this->attachListeners($name, $adapter);
     }
 
-    private function attachListeners(string $name, AdapterInterface $adapter): void
+    private function attachListeners(string $name, AbstractAdapter $adapter): void
     {
         if (isset($this->listenersAttached[$name])) {
             return;

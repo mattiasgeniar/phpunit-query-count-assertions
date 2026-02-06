@@ -29,19 +29,12 @@ use Stringable;
  *     $connection = DriverManager::getConnection($params, $config);
  *     $driver->registerConnection('default', $connection);
  *
- * Note: Query timing is measured between the "Executing" log entry and the next
- * log call from the same middleware. This is an approximation that may include
- * minor overhead from the logging infrastructure.
+ * Note: Queries are recorded when the "Executing" log entry is received (before
+ * actual execution). Timing is not available since Doctrine's logging middleware
+ * does not emit a post-execution event.
  */
 class DoctrineQueryLogger extends AbstractLogger
 {
-    private ?float $startTime = null;
-
-    private ?string $currentSql = null;
-
-    /** @var array<int|string, mixed> */
-    private array $currentBindings = [];
-
     public function __construct(
         private readonly DoctrineDriver $driver,
         private readonly string $connectionName = 'default'
@@ -62,27 +55,12 @@ class DoctrineQueryLogger extends AbstractLogger
                 return;
             }
 
-            $this->startTime = microtime(true);
-            $this->currentSql = $context['sql'];
-            $this->currentBindings = $context['params'] ?? [];
-
-            return;
-        }
-
-        // The next log call after "Executing" marks query completion
-        if ($this->startTime !== null && $this->currentSql !== null) {
-            $timeMs = (microtime(true) - $this->startTime) * 1000;
-
             $this->driver->recordQuery(
-                $this->currentSql,
-                $this->currentBindings,
-                $timeMs,
+                $context['sql'],
+                $context['params'] ?? [],
+                0.0,
                 $this->connectionName
             );
-
-            $this->startTime = null;
-            $this->currentSql = null;
-            $this->currentBindings = [];
         }
     }
 }
