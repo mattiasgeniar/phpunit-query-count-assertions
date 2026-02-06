@@ -22,10 +22,13 @@ trait AssertsQueryCounts
      */
     private static ?QueryDriverInterface $driver = null;
 
+    /** @var array<int, array{model: string, relation: string}> */
     private static array $lazyLoadingViolations = [];
 
+    /** @var array<int, array{query: string, bindings: array, issues: array, explain: array}> */
     private static array $indexAnalysisResults = [];
 
+    /** @var array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}> */
     private static array $duplicateQueries = [];
 
     /**

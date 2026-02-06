@@ -14,7 +14,7 @@ use Phalcon\Db\Enum;
 class PhalconConnection implements ConnectionInterface
 {
     public function __construct(
-        private readonly AdapterInterface $adapter
+        private readonly AdapterInterface $adapter,
     ) {}
 
     public function getDriverName(): string
