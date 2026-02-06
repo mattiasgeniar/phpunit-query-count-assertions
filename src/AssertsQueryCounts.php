@@ -333,6 +333,14 @@ trait AssertsQueryCounts
             }
 
             $queries = self::getQueriesExecuted();
+
+            if (empty($queries) && empty(self::$lazyLoadingViolations)) {
+                $this->fail(
+                    "No queries were tracked when assertQueriesAreEfficient() was called.\n"
+                    . 'Ensure you\'re calling trackQueries() in your test to start query tracking.'
+                );
+            }
+
             $issues = [];
 
             if (! empty(self::$lazyLoadingViolations)) {
