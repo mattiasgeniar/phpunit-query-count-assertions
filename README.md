@@ -26,7 +26,7 @@ Supports Laravel, Doctrine/Symfony, and Phalcon.
 | Row count analysis | ✅ | ✅ | ✅ |
 | Lazy loading detection | ✅ | ❌ | ❌ |
 
-**Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` pass silently on Doctrine and Phalcon since violations cannot be detected.
+**Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` will mark the test as skipped on Doctrine and Phalcon since violations cannot be detected.
 
 ## Installation
 
@@ -369,7 +369,7 @@ Queries with index issues detected:
 - **MariaDB** - Full support with tabular EXPLAIN
 - **SQLite** - Index analysis supported, row counting not available
 
-Other databases pass silently. See [Custom analysers](#custom-analysers) to add support for additional databases.
+Other databases will skip the assertion. See [Custom analysers](#custom-analysers) to add support for additional databases.
 
 ### What gets analyzed
 
@@ -466,7 +466,7 @@ Queries examining more than 1000 rows:
        #1: tests/Feature/UserTest.php:42
 ```
 
-SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion passes silently.
+SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion is skipped.
 
 ## Query timing assertions
 
