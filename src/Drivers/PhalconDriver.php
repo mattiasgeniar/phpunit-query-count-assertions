@@ -6,10 +6,8 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Drivers;
 
 use Closure;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
-use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
 use Phalcon\Db\Adapter\AbstractAdapter;
 use Phalcon\Events\Manager as EventsManager;
-use RuntimeException;
 
 /**
  * Phalcon driver for query tracking.
@@ -30,45 +28,14 @@ use RuntimeException;
  *
  * Lazy loading detection is NOT supported in Phalcon.
  */
-class PhalconDriver implements QueryDriverInterface
+class PhalconDriver extends AbstractDriver
 {
-    /**
-     * Registered connections.
-     *
-     * @var array<string, AbstractAdapter>
-     */
-    private array $connections = [];
-
     /**
      * Start times for queries, keyed by connection name.
      *
      * @var array<string, float>
      */
     private array $startTimes = [];
-
-    /**
-     * Whether we're currently tracking.
-     */
-    private static bool $isTracking = false;
-
-    /**
-     * Current query callback.
-     */
-    private static ?Closure $queryCallback = null;
-
-    /**
-     * Connections to track (null = all).
-     *
-     * @var array<string>|null
-     */
-    private static ?array $connectionsToTrack = null;
-
-    /**
-     * Cached connection wrappers.
-     *
-     * @var array<string, ConnectionInterface>
-     */
-    private array $connectionWrappers = [];
 
     /**
      * Track which connections have listeners attached.
@@ -86,6 +53,34 @@ class PhalconDriver implements QueryDriverInterface
         $this->attachListeners($name, $adapter);
     }
 
+    protected function wrapConnection(object $connection): ConnectionInterface
+    {
+        assert($connection instanceof AbstractAdapter);
+
+        return new PhalconConnection($connection);
+    }
+
+    public function startListening(Closure $callback, ?array $connections = null): void
+    {
+        parent::startListening($callback, $connections);
+        $this->startTimes = [];
+    }
+
+    public function stopListening(): void
+    {
+        parent::stopListening();
+        $this->startTimes = [];
+    }
+
+    public function getStackTraceSkipPatterns(): array
+    {
+        return [
+            ...parent::getStackTraceSkipPatterns(),
+            '/vendor\/phalcon\//',
+            '/Drivers\/PhalconDriver\.php$/',
+        ];
+    }
+
     private function attachListeners(string $name, AbstractAdapter $adapter): void
     {
         if (isset($this->listenersAttached[$name])) {
@@ -100,97 +95,24 @@ class PhalconDriver implements QueryDriverInterface
         }
 
         $eventsManager->attach('db:beforeQuery', function ($event, $connection) use ($name) {
-            if (self::$isTracking) {
+            if (self::isCurrentlyTracking()) {
                 $this->startTimes[$name] = microtime(true);
             }
         });
 
         $eventsManager->attach('db:afterQuery', function ($event, $connection) use ($name) {
-            if (! self::$isTracking || self::$queryCallback === null) {
-                return;
-            }
-
-            if (self::$connectionsToTrack !== null
-                && ! in_array($name, self::$connectionsToTrack, true)) {
-                return;
-            }
-
             $startTime = $this->startTimes[$name] ?? microtime(true);
             $timeMs = (microtime(true) - $startTime) * 1000;
-
-            (self::$queryCallback)([
-                'query' => $connection->getSQLStatement(),
-                'bindings' => $connection->getSQLVariables() ?? [],
-                'time' => $timeMs,
-                'connection' => $name,
-            ]);
-
             unset($this->startTimes[$name]);
+
+            self::dispatchQuery(
+                $connection->getSQLStatement(),
+                $connection->getSQLVariables() ?? [],
+                $timeMs,
+                $name,
+            );
         });
 
         $this->listenersAttached[$name] = true;
-    }
-
-    public function startListening(Closure $callback, ?array $connections = null): void
-    {
-        self::$isTracking = true;
-        self::$queryCallback = $callback;
-        self::$connectionsToTrack = $connections;
-        $this->startTimes = [];
-    }
-
-    public function stopListening(): void
-    {
-        self::$isTracking = false;
-        self::$queryCallback = null;
-        self::$connectionsToTrack = null;
-        $this->startTimes = [];
-    }
-
-    public function getConnection(?string $name = null): ConnectionInterface
-    {
-        if (empty($this->connections)) {
-            throw new RuntimeException(
-                'No Phalcon connections registered. Call registerConnection() first.'
-            );
-        }
-
-        $name = $name ?? array_key_first($this->connections);
-
-        if (! isset($this->connections[$name])) {
-            throw new RuntimeException("Phalcon connection '{$name}' not registered.");
-        }
-
-        return $this->connectionWrappers[$name] ??= new PhalconConnection($this->connections[$name]);
-    }
-
-    /**
-     * Lazy loading detection is NOT supported in Phalcon.
-     *
-     * @return false Always returns false
-     */
-    public function enableLazyLoadingDetection(Closure $violationCallback): bool
-    {
-        return false;
-    }
-
-    public function disableLazyLoadingDetection(): void
-    {
-        // No-op: Phalcon doesn't support lazy loading detection
-    }
-
-    public function getBasePath(): string
-    {
-        return getcwd() ?: '';
-    }
-
-    public function getStackTraceSkipPatterns(): array
-    {
-        return [
-            '/vendor\/phalcon\//',
-            '/AssertsQueryCounts\.php$/',
-            '/Drivers\/PhalconDriver\.php$/',
-            '/vendor\/phpunit/',
-        ];
     }
 }
