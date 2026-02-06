@@ -6,5 +6,15 @@ parameters:
     level: 5
     paths:
         - src
+    ignoreErrors:
+        # Doctrine and Phalcon are optional dependencies - may or may not be installed
+        -
+            identifier: class.notFound
+            reportUnmatched: false
+            paths:
+                - src/Drivers/DoctrineConnection.php
+                - src/Drivers/DoctrineDriver.php
+                - src/Drivers/PhalconConnection.php
+                - src/Drivers/PhalconDriver.php
     tmpDir: build/phpstan
     checkModelProperties: true

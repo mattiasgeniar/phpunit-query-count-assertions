@@ -6,8 +6,16 @@
          cacheDirectory=".phpunit.cache"
 >
     <testsuites>
-        <testsuite name="Mattiasgeniar Test Suite">
+        <testsuite name="Laravel">
             <directory>tests</directory>
+            <exclude>tests/Doctrine</exclude>
+            <exclude>tests/Phalcon</exclude>
+        </testsuite>
+        <testsuite name="Doctrine">
+            <directory>tests/Doctrine</directory>
+        </testsuite>
+        <testsuite name="Phalcon">
+            <directory>tests/Phalcon</directory>
         </testsuite>
     </testsuites>
     <source>

@@ -2,7 +2,7 @@
 
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 
-use Illuminate\Database\Connection;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -232,7 +232,7 @@ class MySQLAnalyserTest extends TestCase
     {
         $analyser = new MySQLAnalyser;
 
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createMock(ConnectionInterface::class);
         $versionCalls = 0;
         $explainCalls = 0;
 
