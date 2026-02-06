@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\Drivers;
 
-use LogicException;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Phalcon\Db\Adapter\AdapterInterface;
 use Phalcon\Db\Enum;
@@ -33,12 +32,7 @@ class PhalconConnection implements ConnectionInterface
 
     public function select(string $sql, array $bindings = []): array
     {
-        // For EXPLAIN queries, substitute bindings directly since MySQL doesn't
-        // support parameterized LIMIT/OFFSET in prepared statements
-        if ($this->isExplainQuery($sql)) {
-            $sql = $this->substituteBindings($sql, $bindings);
-            $bindings = [];
-        }
+        [$sql, $bindings] = $this->prepareQuery($sql, $bindings);
 
         $result = $this->adapter->query($sql, $bindings);
         $rows = [];
@@ -55,12 +49,7 @@ class PhalconConnection implements ConnectionInterface
 
     public function selectOne(string $sql, array $bindings = []): ?object
     {
-        // For EXPLAIN queries, substitute bindings directly since MySQL doesn't
-        // support parameterized LIMIT/OFFSET in prepared statements
-        if ($this->isExplainQuery($sql)) {
-            $sql = $this->substituteBindings($sql, $bindings);
-            $bindings = [];
-        }
+        [$sql, $bindings] = $this->prepareQuery($sql, $bindings);
 
         $result = $this->adapter->query($sql, $bindings);
 
@@ -74,9 +63,20 @@ class PhalconConnection implements ConnectionInterface
         return $row !== false ? $row : null;
     }
 
-    private function isExplainQuery(string $sql): bool
+    /**
+     * For EXPLAIN queries, substitute bindings directly since MySQL doesn't
+     * support parameterized LIMIT/OFFSET in prepared statements.
+     *
+     * @param  array<int|string, mixed>  $bindings
+     * @return array{0: string, 1: array<int|string, mixed>}
+     */
+    private function prepareQuery(string $sql, array $bindings): array
     {
-        return str_starts_with(strtoupper(ltrim($sql)), 'EXPLAIN');
+        if (str_starts_with(strtoupper(ltrim($sql)), 'EXPLAIN')) {
+            return [$this->substituteBindings($sql, $bindings), []];
+        }
+
+        return [$sql, $bindings];
     }
 
     /**
@@ -94,10 +94,6 @@ class PhalconConnection implements ConnectionInterface
      */
     private function substituteBindings(string $sql, array $bindings): string
     {
-        if (! $this->isExplainQuery($sql)) {
-            throw new LogicException('substituteBindings() should only be used for EXPLAIN queries.');
-        }
-
         foreach ($bindings as $key => $value) {
             $placeholder = is_int($key) ? '?' : ':' . ltrim((string) $key, ':');
             $replacement = $this->formatBindingValue($value);

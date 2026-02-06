@@ -164,16 +164,7 @@ trait AssertsQueryCounts
      */
     public function assertNoLazyLoading(Closure $closure): void
     {
-        $violations = $this->collectLazyLoadingViolations($closure);
-
-        if ($violations === null) {
-            $this->markTestSkipped(
-                'Lazy loading detection is not supported by the current driver. '
-                . 'This feature requires Laravel with Eloquent ORM.'
-            );
-
-            return;
-        }
+        $violations = $this->requireLazyLoadingViolations($closure);
 
         $this->assertEmpty(
             $violations,
@@ -183,16 +174,7 @@ trait AssertsQueryCounts
 
     public function assertLazyLoadingCount(int $expectedCount, Closure $closure): void
     {
-        $violations = $this->collectLazyLoadingViolations($closure);
-
-        if ($violations === null) {
-            $this->markTestSkipped(
-                'Lazy loading detection is not supported by the current driver. '
-                . 'This feature requires Laravel with Eloquent ORM.'
-            );
-
-            return;
-        }
+        $violations = $this->requireLazyLoadingViolations($closure);
 
         $this->assertCount(
             $expectedCount,
@@ -870,6 +852,27 @@ trait AssertsQueryCounts
             'Queries with index issues detected:',
             'All queries use indexes.'
         );
+    }
+
+    /**
+     * Collect lazy loading violations, skipping the test if the driver doesn't support it.
+     *
+     * @return array<int, array{model: string, relation: string}>
+     */
+    private function requireLazyLoadingViolations(Closure $closure): array
+    {
+        $violations = $this->collectLazyLoadingViolations($closure);
+
+        if ($violations === null) {
+            $this->markTestSkipped(
+                'Lazy loading detection is not supported by the current driver. '
+                . 'This feature requires Laravel with Eloquent ORM.'
+            );
+
+            return [];
+        }
+
+        return $violations;
     }
 
     /**

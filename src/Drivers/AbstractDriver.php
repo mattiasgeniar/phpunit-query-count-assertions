@@ -89,7 +89,6 @@ abstract class AbstractDriver implements QueryDriverInterface
     {
         return [
             '/AssertsQueryCounts\.php$/',
-            '/Drivers\/AbstractDriver\.php$/',
             '/vendor\/phpunit/',
         ];
     }

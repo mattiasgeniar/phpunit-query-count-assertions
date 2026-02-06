@@ -94,13 +94,13 @@ class PhalconDriver extends AbstractDriver
             $adapter->setEventsManager($eventsManager);
         }
 
-        $eventsManager->attach('db:beforeQuery', function ($event, $connection) use ($name) {
+        $eventsManager->attach('db:beforeQuery', function () use ($name) {
             if (self::isCurrentlyTracking()) {
                 $this->startTimes[$name] = microtime(true);
             }
         });
 
-        $eventsManager->attach('db:afterQuery', function ($event, $connection) use ($name) {
+        $eventsManager->attach('db:afterQuery', function ($_event, $connection) use ($name) {
             $startTime = $this->startTimes[$name] ?? microtime(true);
             $timeMs = (microtime(true) - $startTime) * 1000;
             unset($this->startTimes[$name]);
