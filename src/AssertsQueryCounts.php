@@ -153,7 +153,7 @@ trait AssertsQueryCounts
      *
      * This leverages the driver's lazy loading detection mechanism.
      * For Laravel, this uses Model::preventLazyLoading().
-     * For drivers that don't support lazy loading detection, this assertion passes silently.
+     * For drivers that don't support lazy loading detection, the test is marked as skipped.
      *
      * @see https://laravel.com/docs/eloquent-relationships#preventing-lazy-loading
      */
@@ -162,7 +162,10 @@ trait AssertsQueryCounts
         $violations = $this->collectLazyLoadingViolations($closure);
 
         if ($violations === null) {
-            return;
+            $this->markTestSkipped(
+                'Lazy loading detection is not supported by the current driver. '
+                . 'This feature requires Laravel with Eloquent ORM.'
+            );
         }
 
         $this->assertEmpty(
@@ -176,7 +179,10 @@ trait AssertsQueryCounts
         $violations = $this->collectLazyLoadingViolations($closure);
 
         if ($violations === null) {
-            return;
+            $this->markTestSkipped(
+                'Lazy loading detection is not supported by the current driver. '
+                . 'This feature requires Laravel with Eloquent ORM.'
+            );
         }
 
         $this->assertCount(
@@ -291,6 +297,8 @@ trait AssertsQueryCounts
 
     private static function resetTrackingState(): void
     {
+        self::$driver?->stopListening();
+
         self::$lazyLoadingViolations = [];
         self::$duplicateQueries = [];
         self::$indexAnalysisResults = [];
@@ -327,6 +335,14 @@ trait AssertsQueryCounts
             }
 
             $queries = self::getQueriesExecuted();
+
+            if (empty($queries) && empty(self::$lazyLoadingViolations)) {
+                $this->fail(
+                    "No queries were tracked when assertQueriesAreEfficient() was called.\n"
+                    . 'Ensure you\'re calling trackQueries() in your test to start query tracking.'
+                );
+            }
+
             $issues = [];
 
             if (! empty(self::$lazyLoadingViolations)) {
@@ -619,6 +635,9 @@ trait AssertsQueryCounts
         $defaultAnalyser = $this->getQueryAnalyser();
 
         if ($defaultAnalyser === null || ! $defaultAnalyser->supportsRowCounting()) {
+            $driver = $this->getDriverName();
+            $this->markTestSkipped("Row count analysis not supported for driver: {$driver}");
+
             return [];
         }
 
@@ -694,6 +713,9 @@ trait AssertsQueryCounts
         $defaultAnalyser = $this->getQueryAnalyser();
 
         if ($defaultAnalyser === null) {
+            $driver = $this->getDriverName();
+            $this->markTestSkipped("Index analysis not supported for driver: {$driver}. See registerQueryAnalyser() to add support.");
+
             return [];
         }
 
