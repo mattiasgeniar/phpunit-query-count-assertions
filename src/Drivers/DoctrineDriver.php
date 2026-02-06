@@ -8,6 +8,7 @@ use Closure;
 use Doctrine\DBAL\Connection;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
+use RuntimeException;
 
 /**
  * Doctrine DBAL driver for query tracking.
@@ -67,6 +68,13 @@ class DoctrineDriver implements QueryDriverInterface
     private static ?array $connectionsToTrack = null;
 
     /**
+     * Cached connection wrappers.
+     *
+     * @var array<string, ConnectionInterface>
+     */
+    private array $connectionWrappers = [];
+
+    /**
      * Register a Doctrine DBAL connection for tracking.
      */
     public function registerConnection(string $name, Connection $connection): void
@@ -91,7 +99,7 @@ class DoctrineDriver implements QueryDriverInterface
     public function getConnection(?string $name = null): ConnectionInterface
     {
         if (empty($this->connections)) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'No Doctrine connections registered. Call registerConnection() first.'
             );
         }
@@ -99,10 +107,10 @@ class DoctrineDriver implements QueryDriverInterface
         $name = $name ?? array_key_first($this->connections);
 
         if (! isset($this->connections[$name])) {
-            throw new \RuntimeException("Doctrine connection '{$name}' not registered.");
+            throw new RuntimeException("Doctrine connection '{$name}' not registered.");
         }
 
-        return new DoctrineConnection($this->connections[$name]);
+        return $this->connectionWrappers[$name] ??= new DoctrineConnection($this->connections[$name]);
     }
 
     /**
@@ -162,15 +170,5 @@ class DoctrineDriver implements QueryDriverInterface
             'time' => $timeMs,
             'connection' => $connectionName,
         ]);
-    }
-
-    /**
-     * Check if currently tracking queries.
-     *
-     * @internal
-     */
-    public static function isTracking(): bool
-    {
-        return self::$isTracking;
     }
 }

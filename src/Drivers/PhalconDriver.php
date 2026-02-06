@@ -9,6 +9,7 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
 use Phalcon\Db\Adapter\AbstractAdapter;
 use Phalcon\Events\Manager as EventsManager;
+use RuntimeException;
 
 /**
  * Phalcon driver for query tracking.
@@ -61,6 +62,13 @@ class PhalconDriver implements QueryDriverInterface
      * @var array<string>|null
      */
     private static ?array $connectionsToTrack = null;
+
+    /**
+     * Cached connection wrappers.
+     *
+     * @var array<string, ConnectionInterface>
+     */
+    private array $connectionWrappers = [];
 
     /**
      * Track which connections have listeners attached.
@@ -142,7 +150,7 @@ class PhalconDriver implements QueryDriverInterface
     public function getConnection(?string $name = null): ConnectionInterface
     {
         if (empty($this->connections)) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'No Phalcon connections registered. Call registerConnection() first.'
             );
         }
@@ -150,10 +158,10 @@ class PhalconDriver implements QueryDriverInterface
         $name = $name ?? array_key_first($this->connections);
 
         if (! isset($this->connections[$name])) {
-            throw new \RuntimeException("Phalcon connection '{$name}' not registered.");
+            throw new RuntimeException("Phalcon connection '{$name}' not registered.");
         }
 
-        return new PhalconConnection($this->connections[$name]);
+        return $this->connectionWrappers[$name] ??= new PhalconConnection($this->connections[$name]);
     }
 
     /**

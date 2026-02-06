@@ -11,7 +11,7 @@ use Stringable;
  * PSR-3 compatible logger for Doctrine DBAL query tracking.
  *
  * This logger can be used with Doctrine's Logging\Middleware to track queries.
- * Verified against Doctrine DBAL 3.x and 4.x, which log queries with structured
+ * Verified against Doctrine DBAL 4.x, which logs queries with structured
  * context arrays containing 'sql' and 'params' keys.
  *
  * Example usage:
@@ -37,7 +37,7 @@ class DoctrineQueryLogger extends AbstractLogger
 {
     public function __construct(
         private readonly DoctrineDriver $driver,
-        private readonly string $connectionName = 'default'
+        private readonly string $connectionName = 'default',
     ) {}
 
     /**

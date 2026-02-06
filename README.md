@@ -13,20 +13,22 @@ Supports Laravel, Doctrine/Symfony, and Phalcon.
 
 - PHP 8.2+
 - PHPUnit 11 or Pest 3
-- **Laravel 11/12**, **Doctrine DBAL 3/4**, or **Phalcon 5+**
+- **Laravel 11/12**, **Doctrine DBAL 4**, or **Phalcon 6+**
 
 ## Driver Compatibility
 
 | Feature | Laravel | Doctrine | Phalcon |
 |---------|:-------:|:--------:|:-------:|
 | Query counting | ✅ | ✅ | ✅ |
-| Query timing | ✅ | ✅ | ✅ |
+| Query timing | ✅ | ❌ | ✅ |
 | Duplicate detection | ✅ | ✅ | ✅ |
 | Index analysis (EXPLAIN) | ✅ | ✅ | ✅ |
 | Row count analysis | ✅ | ✅ | ✅ |
 | Lazy loading detection | ✅ | ❌ | ❌ |
 
 **Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` will mark the test as skipped on Doctrine and Phalcon since violations cannot be detected.
+
+**Note:** Doctrine's logging middleware only fires before query execution, so query timing is not available. Timing assertions (`assertMaxQueryTime`, `assertTotalQueryTime`) will always report 0ms for Doctrine queries.
 
 ## Installation
 

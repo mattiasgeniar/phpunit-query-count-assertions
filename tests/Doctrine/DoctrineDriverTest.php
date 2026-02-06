@@ -13,6 +13,7 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineDriver;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineQueryLogger;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\SkippedWithMessageException;
 use PHPUnit\Framework\TestCase;
 
 class DoctrineDriverTest extends TestCase
@@ -174,7 +175,7 @@ class DoctrineDriverTest extends TestCase
     #[Test]
     public function it_skips_lazy_loading_detection(): void
     {
-        $this->expectException(\PHPUnit\Framework\SkippedWithMessageException::class);
+        $this->expectException(SkippedWithMessageException::class);
         $this->expectExceptionMessage('Lazy loading detection is not supported');
 
         $this->assertNoLazyLoading(function () {
@@ -185,7 +186,7 @@ class DoctrineDriverTest extends TestCase
     #[Test]
     public function it_skips_lazy_loading_count(): void
     {
-        $this->expectException(\PHPUnit\Framework\SkippedWithMessageException::class);
+        $this->expectException(SkippedWithMessageException::class);
         $this->expectExceptionMessage('Lazy loading detection is not supported');
 
         $this->assertLazyLoadingCount(0, function () {
@@ -248,7 +249,7 @@ class DoctrineDriverTest extends TestCase
     }
 
     #[Test]
-    public function it_connection_can_select(): void
+    public function it_can_select_rows_via_connection_wrapper(): void
     {
         self::$conn->executeStatement("INSERT INTO users (name) VALUES ('John')");
 
@@ -260,7 +261,7 @@ class DoctrineDriverTest extends TestCase
     }
 
     #[Test]
-    public function it_connection_can_select_one(): void
+    public function it_can_select_one_row_via_connection_wrapper(): void
     {
         self::$conn->executeStatement("INSERT INTO users (name) VALUES ('John')");
 
@@ -272,7 +273,7 @@ class DoctrineDriverTest extends TestCase
     }
 
     #[Test]
-    public function it_connection_select_one_returns_null_for_no_results(): void
+    public function it_returns_null_when_select_one_finds_no_results(): void
     {
         $connection = self::$doctrineDriver->getConnection('default');
         $row = $connection->selectOne("SELECT * FROM users WHERE name = 'nonexistent'");

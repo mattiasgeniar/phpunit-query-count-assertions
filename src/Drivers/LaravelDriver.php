@@ -43,6 +43,13 @@ class LaravelDriver implements QueryDriverInterface
     private static bool $isTracking = false;
 
     /**
+     * Cached connection wrappers.
+     *
+     * @var array<string, ConnectionInterface>
+     */
+    private array $connectionWrappers = [];
+
+    /**
      * Snapshot of lazy loading state to restore after tracking.
      *
      * @var array{prevention: bool, callback: callable|null}|null
@@ -72,7 +79,9 @@ class LaravelDriver implements QueryDriverInterface
 
     public function getConnection(?string $name = null): ConnectionInterface
     {
-        return new LaravelConnection(DB::connection($name));
+        $key = $name ?? 'default';
+
+        return $this->connectionWrappers[$key] ??= new LaravelConnection(DB::connection($name));
     }
 
     public function enableLazyLoadingDetection(Closure $violationCallback): bool

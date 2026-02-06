@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\Drivers;
 
+use LogicException;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Phalcon\Db\Adapter\AdapterInterface;
+use Phalcon\Db\Enum;
 
 /**
  * Phalcon database adapter wrapper implementing ConnectionInterface.
@@ -42,7 +44,7 @@ class PhalconConnection implements ConnectionInterface
         $rows = [];
 
         if ($result !== false) {
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_OBJ);
+            $result->setFetchMode(Enum::FETCH_OBJ);
             while ($row = $result->fetch()) {
                 $rows[] = $row;
             }
@@ -66,7 +68,7 @@ class PhalconConnection implements ConnectionInterface
             return null;
         }
 
-        $result->setFetchMode(\Phalcon\Db\Enum::FETCH_OBJ);
+        $result->setFetchMode(Enum::FETCH_OBJ);
         $row = $result->fetch();
 
         return $row !== false ? $row : null;
@@ -93,7 +95,7 @@ class PhalconConnection implements ConnectionInterface
     private function substituteBindings(string $sql, array $bindings): string
     {
         if (! $this->isExplainQuery($sql)) {
-            throw new \LogicException('substituteBindings() should only be used for EXPLAIN queries.');
+            throw new LogicException('substituteBindings() should only be used for EXPLAIN queries.');
         }
 
         foreach ($bindings as $key => $value) {

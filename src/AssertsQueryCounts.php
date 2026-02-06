@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
+use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\LaravelDriver;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Enums\Severity;
@@ -10,6 +13,7 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\SQLiteAnalyser;
+use RuntimeException;
 
 trait AssertsQueryCounts
 {
@@ -57,6 +61,7 @@ trait AssertsQueryCounts
      */
     public static function useDriver(QueryDriverInterface $driver): void
     {
+        self::$driver?->stopListening();
         self::$driver = $driver;
     }
 
@@ -67,12 +72,12 @@ trait AssertsQueryCounts
     {
         if (self::$driver === null) {
             // Auto-detect Laravel for backwards compatibility
-            if (class_exists(\Illuminate\Support\Facades\DB::class)) {
+            if (class_exists(DB::class) && DB::getFacadeRoot() !== null) {
                 self::$driver = new LaravelDriver;
             } else {
-                throw new \RuntimeException(
-                    'No query driver configured. Call useDriver() with a driver implementation, ' .
-                    'or install Laravel for auto-detection.'
+                throw new RuntimeException(
+                    'No query driver configured. Call useDriver() with a driver implementation, '
+                    . 'or install Laravel for auto-detection.'
                 );
             }
         }
@@ -166,6 +171,8 @@ trait AssertsQueryCounts
                 'Lazy loading detection is not supported by the current driver. '
                 . 'This feature requires Laravel with Eloquent ORM.'
             );
+
+            return;
         }
 
         $this->assertEmpty(
@@ -183,6 +190,8 @@ trait AssertsQueryCounts
                 'Lazy loading detection is not supported by the current driver. '
                 . 'This feature requires Laravel with Eloquent ORM.'
             );
+
+            return;
         }
 
         $this->assertCount(
