@@ -101,7 +101,11 @@ class PhalconDriver extends AbstractDriver
         });
 
         $eventsManager->attach('db:afterQuery', function ($_event, $connection) use ($name) {
-            $startTime = $this->startTimes[$name] ?? microtime(true);
+            if (! isset($this->startTimes[$name])) {
+                return;
+            }
+
+            $startTime = $this->startTimes[$name];
             $timeMs = (microtime(true) - $startTime) * 1000;
             unset($this->startTimes[$name]);
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
-use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\SupportsQueryTimingInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\LaravelDriver;
@@ -76,7 +75,7 @@ trait AssertsQueryCounts
     {
         if (self::$driver === null) {
             // Auto-detect Laravel for backwards compatibility
-            if (class_exists(DB::class) && DB::getFacadeRoot() !== null) {
+            if (class_exists('Illuminate\Support\Facades\DB') && \Illuminate\Support\Facades\DB::getFacadeRoot() !== null) {
                 self::$driver = new LaravelDriver;
             } else {
                 throw new RuntimeException(
