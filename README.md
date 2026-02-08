@@ -28,7 +28,7 @@ Supports Laravel, Doctrine/Symfony, and Phalcon.
 
 **Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` will mark the test as skipped on Doctrine and Phalcon since violations cannot be detected.
 
-**Note:** Doctrine's logging middleware only fires before query execution, so query timing is not available. Timing assertions (`assertMaxQueryTime`, `assertTotalQueryTime`) will always report 0ms for Doctrine queries.
+**Note:** Doctrine's logging middleware only fires before query execution, so query timing is not available. Timing assertions (`assertMaxQueryTime`, `assertTotalQueryTime`) are marked as skipped for Doctrine.
 
 ## Installation
 

@@ -10,6 +10,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\SupportsQueryTimingInterface;
 use ReflectionProperty;
 
 /**
@@ -18,7 +19,7 @@ use ReflectionProperty;
  * Implements query listening via DB::listen() and lazy loading
  * detection via Model::preventLazyLoading().
  */
-class LaravelDriver implements QueryDriverInterface
+class LaravelDriver implements QueryDriverInterface, SupportsQueryTimingInterface
 {
     /**
      * Hash of the app instance where listener was registered, to detect app refreshes in tests.
@@ -117,6 +118,11 @@ class LaravelDriver implements QueryDriverInterface
             '/Drivers\/LaravelDriver\.php$/',
             '/vendor\/phpunit/',
         ];
+    }
+
+    public function supportsQueryTiming(): bool
+    {
+        return true;
     }
 
     private function registerGlobalListener(): void

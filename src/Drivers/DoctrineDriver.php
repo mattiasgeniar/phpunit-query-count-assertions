@@ -66,6 +66,11 @@ class DoctrineDriver extends AbstractDriver
         ];
     }
 
+    public function supportsQueryTiming(): bool
+    {
+        return false;
+    }
+
     /**
      * Record a query (called by DoctrineQueryLogger middleware).
      *

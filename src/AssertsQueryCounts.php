@@ -7,6 +7,7 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\SupportsQueryTimingInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\LaravelDriver;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Enums\Severity;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
@@ -256,6 +257,8 @@ trait AssertsQueryCounts
 
     public function assertMaxQueryTime(float $maxMilliseconds, ?Closure $closure = null): void
     {
+        $this->requireQueryTimingSupport();
+
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
             $queries = self::getQueriesExecuted();
             $slowQueries = $this->findSlowQueries($queries, $maxMilliseconds);
@@ -269,6 +272,8 @@ trait AssertsQueryCounts
 
     public function assertTotalQueryTime(float $maxMilliseconds, ?Closure $closure = null): void
     {
+        $this->requireQueryTimingSupport();
+
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
             $queries = self::getQueriesExecuted();
             $totalTime = self::getTotalQueryTime();
@@ -622,6 +627,17 @@ trait AssertsQueryCounts
         }
 
         return $message;
+    }
+
+    private function requireQueryTimingSupport(): void
+    {
+        $driver = self::getDriver();
+
+        if ($driver instanceof SupportsQueryTimingInterface && ! $driver->supportsQueryTiming()) {
+            $this->markTestSkipped(
+                'Query timing assertions are not supported by the current driver.'
+            );
+        }
     }
 
     private function analyzeQueriesForRowCount(array $queries, int $maxRows): array

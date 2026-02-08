@@ -7,6 +7,7 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Drivers;
 use Closure;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\SupportsQueryTimingInterface;
 use RuntimeException;
 
 /**
@@ -16,7 +17,7 @@ use RuntimeException;
  * Subclasses only need to implement registerConnection(), wrapConnection(),
  * and getStackTraceSkipPatterns().
  */
-abstract class AbstractDriver implements QueryDriverInterface
+abstract class AbstractDriver implements QueryDriverInterface, SupportsQueryTimingInterface
 {
     private static bool $isTracking = false;
 
@@ -91,6 +92,11 @@ abstract class AbstractDriver implements QueryDriverInterface
             '/AssertsQueryCounts\.php$/',
             '/vendor\/phpunit/',
         ];
+    }
+
+    public function supportsQueryTiming(): bool
+    {
+        return true;
     }
 
     /**

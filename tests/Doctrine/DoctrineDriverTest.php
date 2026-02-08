@@ -195,6 +195,28 @@ class DoctrineDriverTest extends TestCase
     }
 
     #[Test]
+    public function it_skips_max_query_time_assertion(): void
+    {
+        $this->expectException(SkippedWithMessageException::class);
+        $this->expectExceptionMessage('Query timing assertions are not supported');
+
+        $this->assertMaxQueryTime(100, function () {
+            self::$conn->executeQuery('SELECT * FROM users');
+        });
+    }
+
+    #[Test]
+    public function it_skips_total_query_time_assertion(): void
+    {
+        $this->expectException(SkippedWithMessageException::class);
+        $this->expectExceptionMessage('Query timing assertions are not supported');
+
+        $this->assertTotalQueryTime(100, function () {
+            self::$conn->executeQuery('SELECT * FROM users');
+        });
+    }
+
+    #[Test]
     public function it_can_assert_queries_use_indexes(): void
     {
         self::$conn->executeStatement("INSERT INTO users (name) VALUES ('John')");
