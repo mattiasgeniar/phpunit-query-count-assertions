@@ -1,8 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers;
 
-use Illuminate\Database\Connection;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\Concerns\ExplainsQueries;
 
 class SQLiteAnalyser implements QueryAnalyser
@@ -14,7 +16,7 @@ class SQLiteAnalyser implements QueryAnalyser
         return $driver === 'sqlite';
     }
 
-    public function explain(Connection $connection, string $sql, array $bindings): array
+    public function explain(ConnectionInterface $connection, string $sql, array $bindings): array
     {
         return $connection->select('EXPLAIN QUERY PLAN ' . $sql, $bindings);
     }
@@ -22,7 +24,7 @@ class SQLiteAnalyser implements QueryAnalyser
     /**
      * @return array<int, QueryIssue>
      */
-    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array
+    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?ConnectionInterface $connection = null): array
     {
         $issues = [];
         $targetTable = $this->extractTargetTable($sql);
@@ -83,7 +85,7 @@ class SQLiteAnalyser implements QueryAnalyser
      *
      * @return array<int, array{from: string, to: string, on_delete: string, on_update: string}>
      */
-    protected function getForeignKeysReferencing(Connection $connection, string $childTable, string $parentTable): array
+    protected function getForeignKeysReferencing(ConnectionInterface $connection, string $childTable, string $parentTable): array
     {
         $fks = $connection->select("PRAGMA foreign_key_list({$childTable})");
         $matching = [];
@@ -119,7 +121,7 @@ class SQLiteAnalyser implements QueryAnalyser
         string $detail,
         ?string $targetTable,
         ?string $queryType,
-        ?Connection $connection
+        ?ConnectionInterface $connection
     ): array {
         $issues = [];
 
@@ -186,7 +188,7 @@ class SQLiteAnalyser implements QueryAnalyser
         string $scannedTable,
         ?string $targetTable,
         ?string $queryType,
-        ?Connection $connection
+        ?ConnectionInterface $connection
     ): QueryIssue {
         $fkDetails = '';
 

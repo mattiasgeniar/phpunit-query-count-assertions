@@ -1,8 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers;
 
-use Illuminate\Database\Connection;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Enums\Severity;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\Concerns\ExplainsQueries;
 use Throwable;
@@ -35,7 +37,7 @@ class MySQLAnalyser implements QueryAnalyser
         return in_array($driver, ['mysql', 'mariadb'], true);
     }
 
-    public function explain(Connection $connection, string $sql, array $bindings): array
+    public function explain(ConnectionInterface $connection, string $sql, array $bindings): array
     {
         if ($this->supportsJsonExplain($connection)) {
             return $this->explainJson($connection, $sql, $bindings);
@@ -47,7 +49,7 @@ class MySQLAnalyser implements QueryAnalyser
     /**
      * @return array<int, QueryIssue>
      */
-    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?Connection $connection = null): array
+    public function analyzeIndexUsage(array $explainResults, ?string $sql = null, ?ConnectionInterface $connection = null): array
     {
         if (isset($explainResults['query_block'])) {
             return $this->deduplicateIssues($this->analyzeJsonExplain($explainResults));
@@ -103,7 +105,7 @@ class MySQLAnalyser implements QueryAnalyser
         return $clone;
     }
 
-    protected function supportsJsonExplain(Connection $connection): bool
+    protected function supportsJsonExplain(ConnectionInterface $connection): bool
     {
         $connectionId = spl_object_id($connection);
 
@@ -117,7 +119,7 @@ class MySQLAnalyser implements QueryAnalyser
         return $supports;
     }
 
-    protected function detectJsonExplainSupport(Connection $connection): bool
+    protected function detectJsonExplainSupport(ConnectionInterface $connection): bool
     {
         try {
             $version = $connection->selectOne('SELECT VERSION() as version');
@@ -139,7 +141,7 @@ class MySQLAnalyser implements QueryAnalyser
         }
     }
 
-    protected function explainJson(Connection $connection, string $sql, array $bindings): array
+    protected function explainJson(ConnectionInterface $connection, string $sql, array $bindings): array
     {
         $result = $connection->selectOne('EXPLAIN FORMAT=JSON ' . $sql, $bindings);
 
@@ -147,12 +149,17 @@ class MySQLAnalyser implements QueryAnalyser
             return [];
         }
 
-        $decoded = json_decode($result->EXPLAIN, true);
+        try {
+            $decoded = json_decode($result->EXPLAIN, true, 512, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            // JSON EXPLAIN failed; skip analysis for this query
+            return [];
+        }
 
         return is_array($decoded) ? $decoded : [];
     }
 
-    protected function explainTabular(Connection $connection, string $sql, array $bindings): array
+    protected function explainTabular(ConnectionInterface $connection, string $sql, array $bindings): array
     {
         return $connection->select('EXPLAIN ' . $sql, $bindings);
     }

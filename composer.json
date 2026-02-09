@@ -5,6 +5,9 @@
         "mattiasgeniar",
         "phpunit-query-count-assertions",
         "laravel",
+        "symfony",
+        "doctrine",
+        "phalcon",
         "testing",
         "queries"
     ],
@@ -18,13 +21,19 @@
         }
     ],
     "require": {
-        "php": "^8.2",
-        "illuminate/contracts": "^11.0|^12.0"
+        "php": "^8.2"
+    },
+    "suggest": {
+        "illuminate/database": "Required for Laravel driver support (^11.0|^12.0)",
+        "doctrine/dbal": "Required for Doctrine/Symfony driver support (^4.0)",
+        "psr/log": "Required for Doctrine query logging middleware"
     },
     "require-dev": {
+        "doctrine/dbal": "^4.0",
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.18",
         "orchestra/testbench": "^9.0|^10.0",
+        "phalcon/phalcon": "^6.0",
         "phpunit/phpunit": "^11.0"
     },
     "autoload": {
