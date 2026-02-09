@@ -134,6 +134,7 @@ class LaravelDriver implements QueryDriverInterface, SupportsQueryTimingInterfac
         }
 
         self::$listenerAppHash = $currentAppHash;
+        $this->connectionWrappers = [];
 
         DB::listen(function (QueryExecuted $query) {
             if (! self::$isTracking || self::$queryCallback === null) {
