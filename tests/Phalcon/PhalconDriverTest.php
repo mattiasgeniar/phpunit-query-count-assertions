@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Phalcon;
 
+use Closure;
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\PhalconDriver;
 use Phalcon\Db\Adapter\Pdo\Sqlite;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\SkippedWithMessageException;
 use PHPUnit\Framework\TestCase;
 
 class PhalconDriverTest extends TestCase
@@ -161,25 +161,27 @@ class PhalconDriverTest extends TestCase
     }
 
     #[Test]
-    public function it_skips_lazy_loading_detection(): void
+    public function it_warns_for_lazy_loading_detection(): void
     {
-        $this->expectException(SkippedWithMessageException::class);
-        $this->expectExceptionMessage('Lazy loading detection is not supported');
-
-        $this->assertNoLazyLoading(function () {
-            self::$db->query('SELECT * FROM users');
+        $warning = $this->captureWarning(function () {
+            $this->assertNoLazyLoading(function () {
+                self::$db->query('SELECT * FROM users');
+            });
         });
+
+        $this->assertStringContainsString('Lazy loading detection is not supported', $warning);
     }
 
     #[Test]
-    public function it_skips_lazy_loading_count(): void
+    public function it_warns_for_lazy_loading_count(): void
     {
-        $this->expectException(SkippedWithMessageException::class);
-        $this->expectExceptionMessage('Lazy loading detection is not supported');
-
-        $this->assertLazyLoadingCount(0, function () {
-            self::$db->query('SELECT * FROM users');
+        $warning = $this->captureWarning(function () {
+            $this->assertLazyLoadingCount(0, function () {
+                self::$db->query('SELECT * FROM users');
+            });
         });
+
+        $this->assertStringContainsString('Lazy loading detection is not supported', $warning);
     }
 
     #[Test]
@@ -251,6 +253,24 @@ class PhalconDriverTest extends TestCase
         $row = $connection->selectOne("SELECT * FROM users WHERE name = 'nonexistent'");
 
         $this->assertNull($row);
+    }
+
+    private function captureWarning(Closure $callback): string
+    {
+        $warning = '';
+        set_error_handler(function (int $errno, string $errstr) use (&$warning) {
+            $warning = $errstr;
+
+            return true;
+        }, E_USER_WARNING);
+
+        try {
+            $callback();
+        } finally {
+            restore_error_handler();
+        }
+
+        return $warning;
     }
 
     private function executeQueries(int $count): void

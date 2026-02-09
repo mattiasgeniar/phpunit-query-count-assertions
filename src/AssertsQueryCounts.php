@@ -633,8 +633,9 @@ trait AssertsQueryCounts
         $driver = self::getDriver();
 
         if ($driver instanceof SupportsQueryTimingInterface && ! $driver->supportsQueryTiming()) {
-            $this->markTestSkipped(
-                'Query timing assertions are not supported by the current driver.'
+            trigger_error(
+                'Query timing assertions are not supported by the current driver.',
+                E_USER_WARNING
             );
         }
     }
@@ -645,7 +646,7 @@ trait AssertsQueryCounts
 
         if ($defaultAnalyser === null || ! $defaultAnalyser->supportsRowCounting()) {
             $driver = $this->getDriverName();
-            $this->markTestSkipped("Row count analysis not supported for driver: {$driver}");
+            trigger_error("Row count analysis not supported for driver: {$driver}", E_USER_WARNING);
 
             return [];
         }
@@ -723,7 +724,7 @@ trait AssertsQueryCounts
 
         if ($defaultAnalyser === null) {
             $driver = $this->getDriverName();
-            $this->markTestSkipped("Index analysis not supported for driver: {$driver}. See registerQueryAnalyser() to add support.");
+            trigger_error("Index analysis not supported for driver: {$driver}. See registerQueryAnalyser() to add support.", E_USER_WARNING);
 
             return [];
         }
@@ -882,9 +883,10 @@ trait AssertsQueryCounts
         $violations = $this->collectLazyLoadingViolations($closure);
 
         if ($violations === null) {
-            $this->markTestSkipped(
+            trigger_error(
                 'Lazy loading detection is not supported by the current driver. '
-                . 'This feature requires Laravel with Eloquent ORM.'
+                . 'This feature requires Laravel with Eloquent ORM.',
+                E_USER_WARNING
             );
 
             return [];

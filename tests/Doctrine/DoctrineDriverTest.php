@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Doctrine;
 
+use Closure;
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
@@ -13,7 +14,6 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineDriver;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineQueryLogger;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\SkippedWithMessageException;
 use PHPUnit\Framework\TestCase;
 
 class DoctrineDriverTest extends TestCase
@@ -173,47 +173,51 @@ class DoctrineDriverTest extends TestCase
     }
 
     #[Test]
-    public function it_skips_lazy_loading_detection(): void
+    public function it_warns_for_lazy_loading_detection(): void
     {
-        $this->expectException(SkippedWithMessageException::class);
-        $this->expectExceptionMessage('Lazy loading detection is not supported');
-
-        $this->assertNoLazyLoading(function () {
-            self::$conn->executeQuery('SELECT * FROM users');
+        $warning = $this->captureWarning(function () {
+            $this->assertNoLazyLoading(function () {
+                self::$conn->executeQuery('SELECT * FROM users');
+            });
         });
+
+        $this->assertStringContainsString('Lazy loading detection is not supported', $warning);
     }
 
     #[Test]
-    public function it_skips_lazy_loading_count(): void
+    public function it_warns_for_lazy_loading_count(): void
     {
-        $this->expectException(SkippedWithMessageException::class);
-        $this->expectExceptionMessage('Lazy loading detection is not supported');
-
-        $this->assertLazyLoadingCount(0, function () {
-            self::$conn->executeQuery('SELECT * FROM users');
+        $warning = $this->captureWarning(function () {
+            $this->assertLazyLoadingCount(0, function () {
+                self::$conn->executeQuery('SELECT * FROM users');
+            });
         });
+
+        $this->assertStringContainsString('Lazy loading detection is not supported', $warning);
     }
 
     #[Test]
-    public function it_skips_max_query_time_assertion(): void
+    public function it_warns_for_max_query_time_assertion(): void
     {
-        $this->expectException(SkippedWithMessageException::class);
-        $this->expectExceptionMessage('Query timing assertions are not supported');
-
-        $this->assertMaxQueryTime(100, function () {
-            self::$conn->executeQuery('SELECT * FROM users');
+        $warning = $this->captureWarning(function () {
+            $this->assertMaxQueryTime(100, function () {
+                self::$conn->executeQuery('SELECT * FROM users');
+            });
         });
+
+        $this->assertStringContainsString('Query timing assertions are not supported', $warning);
     }
 
     #[Test]
-    public function it_skips_total_query_time_assertion(): void
+    public function it_warns_for_total_query_time_assertion(): void
     {
-        $this->expectException(SkippedWithMessageException::class);
-        $this->expectExceptionMessage('Query timing assertions are not supported');
-
-        $this->assertTotalQueryTime(100, function () {
-            self::$conn->executeQuery('SELECT * FROM users');
+        $warning = $this->captureWarning(function () {
+            $this->assertTotalQueryTime(100, function () {
+                self::$conn->executeQuery('SELECT * FROM users');
+            });
         });
+
+        $this->assertStringContainsString('Query timing assertions are not supported', $warning);
     }
 
     #[Test]
@@ -301,6 +305,24 @@ class DoctrineDriverTest extends TestCase
         $row = $connection->selectOne("SELECT * FROM users WHERE name = 'nonexistent'");
 
         $this->assertNull($row);
+    }
+
+    private function captureWarning(Closure $callback): string
+    {
+        $warning = '';
+        set_error_handler(function (int $errno, string $errstr) use (&$warning) {
+            $warning = $errstr;
+
+            return true;
+        }, E_USER_WARNING);
+
+        try {
+            $callback();
+        } finally {
+            restore_error_handler();
+        }
+
+        return $warning;
     }
 
     private function executeQueries(int $count): void
