@@ -26,9 +26,9 @@ Supports Laravel, Doctrine/Symfony, and Phalcon.
 | Row count analysis | ✅ | ✅ | ✅ |
 | Lazy loading detection | ✅ | ❌ | ❌ |
 
-**Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` will mark the test as skipped on Doctrine and Phalcon since violations cannot be detected.
+**Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` will emit a warning on Doctrine and Phalcon and pass without checking, since violations cannot be detected.
 
-**Note:** Doctrine's logging middleware only fires before query execution, so query timing is not available. Timing assertions (`assertMaxQueryTime`, `assertTotalQueryTime`) are marked as skipped for Doctrine.
+**Note:** Doctrine's logging middleware only fires before query execution, so query timing is not available. Timing assertions (`assertMaxQueryTime`, `assertTotalQueryTime`) will emit a warning and pass without checking for Doctrine.
 
 ## Installation
 
@@ -371,7 +371,7 @@ Queries with index issues detected:
 - **MariaDB** - Full support with tabular EXPLAIN
 - **SQLite** - Index analysis supported, row counting not available
 
-Other databases will skip the assertion. See [Custom analysers](#custom-analysers) to add support for additional databases.
+Other databases will emit a warning and pass without checking. See [Custom analysers](#custom-analysers) to add support for additional databases.
 
 ### What gets analyzed
 
@@ -468,7 +468,7 @@ Queries examining more than 1000 rows:
        #1: tests/Feature/UserTest.php:42
 ```
 
-SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion is skipped.
+SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so a warning is emitted and the assertion passes without checking.
 
 ## Query timing assertions
 
