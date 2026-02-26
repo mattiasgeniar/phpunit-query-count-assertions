@@ -618,6 +618,61 @@ abstract class TestCase extends BaseTestCase
 
 This will fail any test that has N+1 queries, duplicate queries, or missing indexes. Consider starting with a subset of tests rather than your entire suite.
 
+### Opting out with `#[DisableQueryTracking]`
+
+In paranoid mode, some tests may need to opt out — for example, tests with heavy seeders, migrations, or tests that intentionally execute many queries. Use the `#[DisableQueryTracking]` attribute to skip tracking for specific tests or entire classes:
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\Attributes\DisableQueryTracking;
+
+class DashboardTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->trackQueries();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->assertQueriesAreEfficient();
+        parent::tearDown();
+    }
+
+    // This test is checked normally
+    public function test_dashboard_loads_efficiently(): void
+    {
+        $this->get('/dashboard');
+    }
+
+    // This test opts out of query tracking
+    #[DisableQueryTracking]
+    public function test_heavy_seeder_setup(): void
+    {
+        $this->seed(LargeDatasetSeeder::class);
+        // ...
+    }
+}
+```
+
+You can also disable tracking for an entire test class:
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\Attributes\DisableQueryTracking;
+
+#[DisableQueryTracking]
+class MigrationTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    // All tests in this class skip query tracking
+}
+```
+
+When `#[DisableQueryTracking]` is present, `trackQueries()` returns early without setting up listeners, and all assertions (`assertQueriesAreEfficient()`, `assertQueryCountMatches()`, etc.) pass silently.
+
 ## Configurable thresholds
 
 ### MySQL analyser options
