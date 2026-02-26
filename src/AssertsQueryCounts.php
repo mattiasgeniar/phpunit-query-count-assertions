@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Attributes\DisableQueryTracking;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\SupportsQueryTimingInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\LaravelDriver;
@@ -13,6 +14,9 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\SQLiteAnalyser;
+use ReflectionClass;
+use ReflectionException;
+use ReflectionMethod;
 use RuntimeException;
 
 trait AssertsQueryCounts
@@ -56,6 +60,11 @@ trait AssertsQueryCounts
      * @var array<int, QueryAnalyser>
      */
     private static array $queryAnalysers = [];
+
+    /**
+     * Whether query tracking is disabled for the current test via #[DisableQueryTracking].
+     */
+    private static bool $trackingDisabledForTest = false;
 
     /**
      * Set the query driver implementation.
@@ -303,6 +312,7 @@ trait AssertsQueryCounts
         self::$queryStackTraces = [];
         self::$trackedQueries = [];
         self::$currentTrackingSession = null;
+        self::$trackingDisabledForTest = false;
     }
 
     /**
@@ -330,6 +340,10 @@ trait AssertsQueryCounts
             if ($closure !== null) {
                 $this->trackQueries();
                 $closure();
+            }
+
+            if (self::$trackingDisabledForTest) {
+                return;
             }
 
             $queries = self::getQueriesExecuted();
@@ -941,15 +955,24 @@ trait AssertsQueryCounts
     private function withQueryTracking(?Closure $closure, callable $assertion): void
     {
         if ($closure === null) {
+            if (self::$trackingDisabledForTest) {
+                return;
+            }
+
             $assertion();
 
             return;
         }
 
         $this->trackQueries();
+        $disabled = self::$trackingDisabledForTest;
+
         try {
             $closure();
-            $assertion();
+
+            if (! $disabled) {
+                $assertion();
+            }
         } finally {
             self::$currentTrackingSession = null;
             self::getDriver()->disableLazyLoadingDetection();
@@ -987,6 +1010,30 @@ trait AssertsQueryCounts
     }
 
     /**
+     * Check if the current test method or class has the #[DisableQueryTracking] attribute.
+     */
+    private function hasDisableQueryTrackingAttribute(): bool
+    {
+        if (! method_exists($this, 'name')) {
+            return false;
+        }
+
+        $classReflection = new ReflectionClass($this);
+
+        if (! empty($classReflection->getAttributes(DisableQueryTracking::class))) {
+            return true;
+        }
+
+        try {
+            $methodReflection = new ReflectionMethod($this, $this->name());
+
+            return ! empty($methodReflection->getAttributes(DisableQueryTracking::class));
+        } catch (ReflectionException) {
+            return false;
+        }
+    }
+
+    /**
      * Start tracking database queries across one or more connections.
      *
      * @param  array<string>|string|null  $connections  Connection name(s) to track, or null to track all connections
@@ -994,6 +1041,12 @@ trait AssertsQueryCounts
     public function trackQueries(array|string|null $connections = null): void
     {
         self::resetTrackingState();
+
+        if ($this->hasDisableQueryTrackingAttribute()) {
+            self::$trackingDisabledForTest = true;
+
+            return;
+        }
 
         $connectionsArray = is_string($connections) ? [$connections] : $connections;
         self::$currentTrackingSession = uniqid('tracking_', true);
