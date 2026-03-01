@@ -5,6 +5,7 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Tests;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Attributes\DisableQueryTracking;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Fixtures\Post;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Tests\Fixtures\User;
 use PHPUnit\Framework\AssertionFailedError;
@@ -545,6 +546,22 @@ class AssertsQueryCountsTest extends TestCase
     }
 
     #[Test]
+    public function it_fails_efficient_queries_when_no_queries_were_tracked(): void
+    {
+        try {
+            $this->assertQueriesAreEfficient(function () {
+                // No queries executed
+            });
+            $this->fail('Expected assertion to fail');
+        } catch (AssertionFailedError $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('No queries were tracked', $message);
+            $this->assertStringContainsString('trackQueries()', $message);
+        }
+    }
+
+    #[Test]
     public function it_restores_lazy_loading_state_after_efficient_queries_assertion(): void
     {
         User::create(['name' => 'John']);
@@ -657,5 +674,33 @@ class AssertsQueryCountsTest extends TestCase
         $this->assertCount(1, $queries);
         $this->assertEquals('SELECT 2', $queries[0]['query']);
         $this->assertEquals('replica', $queries[0]['connection']);
+    }
+
+    #[Test]
+    #[DisableQueryTracking]
+    public function it_silently_passes_assertions_when_tracking_is_disabled(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $this->assertNoQueriesExecuted();
+        $this->assertQueryCountMatches(0);
+        $this->assertQueryCountLessThan(1);
+    }
+
+    #[Test]
+    #[DisableQueryTracking]
+    public function it_silently_passes_efficient_assertion_when_tracking_is_disabled(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $this->assertQueriesAreEfficient();
+    }
+
+    #[Test]
+    public function it_still_asserts_normally_without_disable_attribute(): void
+    {
+        DB::select('SELECT 1');
+
+        $this->assertQueryCountMatches(1);
     }
 }

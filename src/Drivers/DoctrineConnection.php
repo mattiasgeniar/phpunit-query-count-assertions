@@ -13,7 +13,7 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 class DoctrineConnection implements ConnectionInterface
 {
     public function __construct(
-        private readonly Connection $connection
+        private readonly Connection $connection,
     ) {}
 
     public function getDriverName(): string

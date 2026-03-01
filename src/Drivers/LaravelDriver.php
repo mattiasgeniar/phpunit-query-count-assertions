@@ -10,6 +10,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\SupportsQueryTimingInterface;
 use ReflectionProperty;
 
 /**
@@ -18,7 +19,7 @@ use ReflectionProperty;
  * Implements query listening via DB::listen() and lazy loading
  * detection via Model::preventLazyLoading().
  */
-class LaravelDriver implements QueryDriverInterface
+class LaravelDriver implements QueryDriverInterface, SupportsQueryTimingInterface
 {
     /**
      * Hash of the app instance where listener was registered, to detect app refreshes in tests.
@@ -41,6 +42,13 @@ class LaravelDriver implements QueryDriverInterface
      * Whether we're currently tracking.
      */
     private static bool $isTracking = false;
+
+    /**
+     * Cached connection wrappers.
+     *
+     * @var array<string, ConnectionInterface>
+     */
+    private array $connectionWrappers = [];
 
     /**
      * Snapshot of lazy loading state to restore after tracking.
@@ -72,7 +80,9 @@ class LaravelDriver implements QueryDriverInterface
 
     public function getConnection(?string $name = null): ConnectionInterface
     {
-        return new LaravelConnection(DB::connection($name));
+        $key = $name ?? DB::getDefaultConnection();
+
+        return $this->connectionWrappers[$key] ??= new LaravelConnection(DB::connection($name));
     }
 
     public function enableLazyLoadingDetection(Closure $violationCallback): bool
@@ -110,6 +120,11 @@ class LaravelDriver implements QueryDriverInterface
         ];
     }
 
+    public function supportsQueryTiming(): bool
+    {
+        return true;
+    }
+
     private function registerGlobalListener(): void
     {
         $currentAppHash = (string) spl_object_id(app());
@@ -119,6 +134,7 @@ class LaravelDriver implements QueryDriverInterface
         }
 
         self::$listenerAppHash = $currentAppHash;
+        $this->connectionWrappers = [];
 
         DB::listen(function (QueryExecuted $query) {
             if (! self::$isTracking || self::$queryCallback === null) {

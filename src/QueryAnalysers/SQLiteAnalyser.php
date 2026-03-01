@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers;
 
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;

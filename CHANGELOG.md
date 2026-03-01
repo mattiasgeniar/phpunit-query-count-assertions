@@ -2,6 +2,18 @@
 
 All notable changes to `phpunit-db-querycounter` will be documented in this file
 
+## Multi-framework support: Laravel, Doctrine & Phalcon - 2026-02-09
+
+### Summary
+
+- Add Doctrine/Symfony and Phalcon support via a driver-based architecture, while keeping Laravel zero-config
+- Unsupported features (lazy loading on Doctrine/Phalcon, query timing on Doctrine) now emit PHPUnit warnings instead of skipping the entire test
+- Add CI matrix covering all three frameworks across PHP 8.2–8.4
+
+## 1.2.5 - 2026-02-06
+
+**Full Changelog**: https://github.com/mattiasgeniar/phpunit-query-count-assertions/compare/1.2.4...1.2.5
+
 ## Support multiple DB connections - 2026-01-25
 
 ### What's Changed
@@ -46,6 +58,8 @@ protected function setUp(): void
 
 
 
+
+
 ```
 **`trackQueriesForEfficiency()` is deprecated**
 
@@ -57,6 +71,8 @@ $this->trackQueriesForEfficiency();
 
 // After
 $this->trackQueries();
+
+
 
 
 
@@ -89,6 +105,8 @@ Now there's just one method that does everything. If you only need query counts,
   $this->trackQueries();                          // Track all connections (new default)
   $this->trackQueries('replica');                 // Track only 'replica' connection
   $this->trackQueries(['mysql', 'replica']);      // Track multiple specific connections
+  
+  
   
   ```
 - Tracked queries now include a `connection` key indicating which connection executed each query.
@@ -139,6 +157,8 @@ $this->assertAllQueriesUseIndexes(function () {
 
 
 
+
+
 ```
 Supports MySQL, MariaDB, and SQLite. Detects full table scans, unused indexes, filesort, temporary tables, and more.
 
@@ -151,6 +171,8 @@ $this->assertNoDuplicateQueries(function () {
     User::find(1);
     User::find(1); // Fails - duplicate
 });
+
+
 
 
 
@@ -171,6 +193,8 @@ $this->assertTotalQueryTime(500, fn() => ...);  // Total time under 500ms
 
 
 
+
+
 ```
 ##### Row Count Threshold (MySQL/MariaDB)
 
@@ -178,6 +202,8 @@ Fail when queries examine too many rows:
 
 ```php
 $this->assertMaxRowsExamined(1000, fn() => User::where('status', 'active')->get());
+
+
 
 
 
@@ -199,6 +225,8 @@ $this->assertQueriesAreEfficient(function () {
 
 
 
+
+
 ```
 Or use `trackQueries()` in setUp/beforeEach for test-wide tracking.
 
@@ -208,6 +236,8 @@ Add support for additional databases:
 
 ```php
 AssertsQueryCounts::registerQueryAnalyser(new PostgresAnalyser());
+
+
 
 
 

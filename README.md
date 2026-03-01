@@ -13,20 +13,22 @@ Supports Laravel, Doctrine/Symfony, and Phalcon.
 
 - PHP 8.2+
 - PHPUnit 11 or Pest 3
-- **Laravel 11/12**, **Doctrine DBAL 3/4**, or **Phalcon 5+**
+- **Laravel 11/12**, **Doctrine DBAL 4**, or **Phalcon 6+**
 
 ## Driver Compatibility
 
 | Feature | Laravel | Doctrine | Phalcon |
 |---------|:-------:|:--------:|:-------:|
 | Query counting | ✅ | ✅ | ✅ |
-| Query timing | ✅ | ✅ | ✅ |
+| Query timing | ✅ | ❌ | ✅ |
 | Duplicate detection | ✅ | ✅ | ✅ |
 | Index analysis (EXPLAIN) | ✅ | ✅ | ✅ |
 | Row count analysis | ✅ | ✅ | ✅ |
 | Lazy loading detection | ✅ | ❌ | ❌ |
 
-**Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` pass silently on Doctrine and Phalcon since violations cannot be detected.
+**Note:** Lazy loading detection requires framework-specific hooks that only Laravel provides. Assertions like `assertNoLazyLoading()` will emit a warning on Doctrine and Phalcon and pass without checking, since violations cannot be detected.
+
+**Note:** Doctrine's logging middleware only fires before query execution, so query timing is not available. Timing assertions (`assertMaxQueryTime`, `assertTotalQueryTime`) will emit a warning and pass without checking for Doctrine.
 
 ## Installation
 
@@ -69,45 +71,87 @@ This catches N+1 queries, duplicate queries, and missing indexes in a single ass
 
 No configuration needed. The package auto-detects Laravel and uses `DB::listen()` for query tracking.
 
-### Doctrine / Symfony
+### Symfony
 
-Doctrine requires middleware configured at connection creation:
+Symfony requires the logging middleware to be registered as a service. Add this to `config/packages/test/services.yaml` (this directory is only loaded when `APP_ENV=test`, so the middleware won't affect dev or production):
+
+```yaml
+services:
+    test.query_assertions.driver:
+        class: Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineDriver
+        public: true
+
+    test.query_assertions.logger:
+        class: Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineQueryLogger
+        arguments:
+            - '@test.query_assertions.driver'
+            - 'default'
+
+    test.query_assertions.middleware:
+        class: Doctrine\DBAL\Logging\Middleware
+        arguments:
+            - '@test.query_assertions.logger'
+        tags:
+            - { name: doctrine.middleware }
+```
+
+Then in your tests:
 
 ```php
-use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Configuration;
-use Doctrine\DBAL\Logging\Middleware;
 use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineDriver;
-use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\DoctrineQueryLogger;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
-class YourTest extends TestCase
+// For KernelTestCase (unit/integration tests)
+class YourTest extends KernelTestCase
 {
     use AssertsQueryCounts;
 
-    private static DoctrineDriver $doctrineDriver;
-
-    public static function setUpBeforeClass(): void
+    protected function setUp(): void
     {
-        // Create driver and logger
-        self::$doctrineDriver = new DoctrineDriver();
-        $logger = new DoctrineQueryLogger(self::$doctrineDriver, 'default');
+        parent::setUp();
+        self::bootKernel();
+        $this->setUpQueryAssertions();
+    }
 
-        // Add middleware when creating connection
-        $config = new Configuration();
-        $config->setMiddlewares([new Middleware($logger)]);
-
-        $connection = DriverManager::getConnection($params, $config);
-        self::$doctrineDriver->registerConnection('default', $connection);
-
-        // Set the driver
-        self::useDriver(self::$doctrineDriver);
+    private function setUpQueryAssertions(): void
+    {
+        $driver = self::getContainer()->get('test.query_assertions.driver');
+        $connection = self::getContainer()->get('doctrine.dbal.default_connection');
+        $driver->registerConnection('default', $connection);
+        self::useDriver($driver);
     }
 
     public function test_queries(): void
     {
         $this->trackQueries();
         // ... your test code
+        $this->assertQueryCountMatches(2);
+    }
+}
+```
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
+use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+
+// For WebTestCase (functional/controller tests)
+class YourControllerTest extends WebTestCase
+{
+    use AssertsQueryCounts;
+
+    public function test_queries(): void
+    {
+        $client = static::createClient(); // Boots kernel automatically
+
+        // Set up query assertions AFTER createClient()
+        $driver = self::getContainer()->get('test.query_assertions.driver');
+        $connection = self::getContainer()->get('doctrine.dbal.default_connection');
+        $driver->registerConnection('default', $connection);
+        self::useDriver($driver);
+
+        $this->trackQueries();
+        $client->request('GET', '/api/users');
         $this->assertQueryCountMatches(2);
     }
 }
@@ -423,7 +467,7 @@ Queries with index issues detected:
 - **MariaDB** - Full support with tabular EXPLAIN
 - **SQLite** - Index analysis supported, row counting not available
 
-Other databases pass silently. See [Custom analysers](#custom-analysers) to add support for additional databases.
+Other databases will emit a warning and pass without checking. See [Custom analysers](#custom-analysers) to add support for additional databases.
 
 ### What gets analyzed
 
@@ -541,7 +585,7 @@ Queries examining more than 1000 rows:
        #1: tests/Feature/UserTest.php:42
 ```
 
-SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so this assertion passes silently.
+SQLite doesn't provide row estimates in EXPLAIN QUERY PLAN, so a warning is emitted and the assertion passes without checking.
 
 ## Query timing assertions
 
@@ -690,6 +734,61 @@ abstract class TestCase extends BaseTestCase
 ```
 
 This will fail any test that has N+1 queries, duplicate queries, or missing indexes. Consider starting with a subset of tests rather than your entire suite.
+
+### Opting out with `#[DisableQueryTracking]`
+
+In paranoid mode, some tests may need to opt out — for example, tests with heavy seeders, migrations, or tests that intentionally execute many queries. Use the `#[DisableQueryTracking]` attribute to skip tracking for specific tests or entire classes:
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\Attributes\DisableQueryTracking;
+
+class DashboardTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->trackQueries();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->assertQueriesAreEfficient();
+        parent::tearDown();
+    }
+
+    // This test is checked normally
+    public function test_dashboard_loads_efficiently(): void
+    {
+        $this->get('/dashboard');
+    }
+
+    // This test opts out of query tracking
+    #[DisableQueryTracking]
+    public function test_heavy_seeder_setup(): void
+    {
+        $this->seed(LargeDatasetSeeder::class);
+        // ...
+    }
+}
+```
+
+You can also disable tracking for an entire test class:
+
+```php
+use Mattiasgeniar\PhpunitQueryCountAssertions\Attributes\DisableQueryTracking;
+
+#[DisableQueryTracking]
+class MigrationTest extends TestCase
+{
+    use AssertsQueryCounts;
+
+    // All tests in this class skip query tracking
+}
+```
+
+When `#[DisableQueryTracking]` is present, `trackQueries()` returns early without setting up listeners, and all assertions (`assertQueriesAreEfficient()`, `assertQueryCountMatches()`, etc.) pass silently.
 
 ## Configurable thresholds
 

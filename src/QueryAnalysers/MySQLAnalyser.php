@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers;
 
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
@@ -149,8 +151,8 @@ class MySQLAnalyser implements QueryAnalyser
 
         try {
             $decoded = json_decode($result->EXPLAIN, true, 512, JSON_THROW_ON_ERROR);
-        } catch (Throwable $t) {
-            //@todo add error logging ?
+        } catch (Throwable) {
+            // JSON EXPLAIN failed; skip analysis for this query
             return [];
         }
 

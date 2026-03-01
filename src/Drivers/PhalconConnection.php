@@ -6,6 +6,7 @@ namespace Mattiasgeniar\PhpunitQueryCountAssertions\Drivers;
 
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\ConnectionInterface;
 use Phalcon\Db\Adapter\AdapterInterface;
+use Phalcon\Db\Enum;
 
 /**
  * Phalcon database adapter wrapper implementing ConnectionInterface.
@@ -13,7 +14,7 @@ use Phalcon\Db\Adapter\AdapterInterface;
 class PhalconConnection implements ConnectionInterface
 {
     public function __construct(
-        private readonly AdapterInterface $adapter
+        private readonly AdapterInterface $adapter,
     ) {}
 
     public function getDriverName(): string
@@ -31,18 +32,13 @@ class PhalconConnection implements ConnectionInterface
 
     public function select(string $sql, array $bindings = []): array
     {
-        // For EXPLAIN queries, substitute bindings directly since MySQL doesn't
-        // support parameterized LIMIT/OFFSET in prepared statements
-        if ($this->isExplainQuery($sql)) {
-            $sql = $this->substituteBindings($sql, $bindings);
-            $bindings = [];
-        }
+        [$sql, $bindings] = $this->prepareQuery($sql, $bindings);
 
         $result = $this->adapter->query($sql, $bindings);
         $rows = [];
 
         if ($result !== false) {
-            $result->setFetchMode(\Phalcon\Db\Enum::FETCH_OBJ);
+            $result->setFetchMode(Enum::FETCH_OBJ);
             while ($row = $result->fetch()) {
                 $rows[] = $row;
             }
@@ -53,12 +49,7 @@ class PhalconConnection implements ConnectionInterface
 
     public function selectOne(string $sql, array $bindings = []): ?object
     {
-        // For EXPLAIN queries, substitute bindings directly since MySQL doesn't
-        // support parameterized LIMIT/OFFSET in prepared statements
-        if ($this->isExplainQuery($sql)) {
-            $sql = $this->substituteBindings($sql, $bindings);
-            $bindings = [];
-        }
+        [$sql, $bindings] = $this->prepareQuery($sql, $bindings);
 
         $result = $this->adapter->query($sql, $bindings);
 
@@ -66,23 +57,38 @@ class PhalconConnection implements ConnectionInterface
             return null;
         }
 
-        $result->setFetchMode(\Phalcon\Db\Enum::FETCH_OBJ);
+        $result->setFetchMode(Enum::FETCH_OBJ);
         $row = $result->fetch();
 
         return $row !== false ? $row : null;
     }
 
-    private function isExplainQuery(string $sql): bool
+    /**
+     * For EXPLAIN queries, substitute bindings directly since MySQL doesn't
+     * support parameterized LIMIT/OFFSET in prepared statements.
+     *
+     * @param  array<int|string, mixed>  $bindings
+     * @return array{0: string, 1: array<int|string, mixed>}
+     */
+    private function prepareQuery(string $sql, array $bindings): array
     {
-        return str_starts_with(strtoupper(ltrim($sql)), 'EXPLAIN');
+        if (str_starts_with(strtoupper(ltrim($sql)), 'EXPLAIN')) {
+            return [$this->substituteBindings($sql, $bindings), []];
+        }
+
+        return [$sql, $bindings];
     }
 
     /**
-     * Substitute named bindings directly into SQL.
+     * Substitute bindings directly into SQL for EXPLAIN queries.
      *
-     * This is safe for EXPLAIN queries since they are read-only and
-     * don't modify data. MySQL doesn't support parameterized LIMIT/OFFSET
-     * in prepared statements, so we must substitute values directly.
+     * This is only used for EXPLAIN queries which are read-only. MySQL doesn't
+     * support parameterized LIMIT/OFFSET in prepared statements, so we must
+     * substitute values directly.
+     *
+     * Known limitation: if the original SQL contains '?' inside string literals
+     * (e.g. SELECT 'Is this ok?' ...), positional replacement may match incorrectly.
+     * This is unlikely for EXPLAIN queries in practice.
      *
      * @param  array<int|string, mixed>  $bindings
      */

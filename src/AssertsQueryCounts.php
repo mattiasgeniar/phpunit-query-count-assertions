@@ -1,15 +1,23 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Mattiasgeniar\PhpunitQueryCountAssertions;
 
 use Closure;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Attributes\DisableQueryTracking;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\QueryDriverInterface;
+use Mattiasgeniar\PhpunitQueryCountAssertions\Contracts\SupportsQueryTimingInterface;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Drivers\LaravelDriver;
 use Mattiasgeniar\PhpunitQueryCountAssertions\Enums\Severity;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\MySQLAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryAnalyser;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\QueryIssue;
 use Mattiasgeniar\PhpunitQueryCountAssertions\QueryAnalysers\SQLiteAnalyser;
+use ReflectionClass;
+use ReflectionException;
+use ReflectionMethod;
+use RuntimeException;
 
 trait AssertsQueryCounts
 {
@@ -18,10 +26,13 @@ trait AssertsQueryCounts
      */
     private static ?QueryDriverInterface $driver = null;
 
+    /** @var array<int, array{model: string, relation: string}> */
     private static array $lazyLoadingViolations = [];
 
+    /** @var array<int, array{query: string, bindings: array, issues: array, explain: array}> */
     private static array $indexAnalysisResults = [];
 
+    /** @var array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}> */
     private static array $duplicateQueries = [];
 
     /**
@@ -50,6 +61,11 @@ trait AssertsQueryCounts
      * @var array<int, QueryAnalyser>
      */
     private static array $queryAnalysers = [];
+
+    /**
+     * Whether query tracking is disabled for the current test via #[DisableQueryTracking].
+     */
+    private static bool $trackingDisabledForTest = false;
 
     /**
      * Global patterns to ignore (applied to all tests).
@@ -83,6 +99,7 @@ trait AssertsQueryCounts
      */
     public static function useDriver(QueryDriverInterface $driver): void
     {
+        self::$driver?->stopListening();
         self::$driver = $driver;
     }
 
@@ -153,12 +170,12 @@ trait AssertsQueryCounts
     {
         if (self::$driver === null) {
             // Auto-detect Laravel for backwards compatibility
-            if (class_exists(\Illuminate\Support\Facades\DB::class)) {
+            if (class_exists('Illuminate\Support\Facades\DB') && \Illuminate\Support\Facades\DB::getFacadeRoot() !== null) {
                 self::$driver = new LaravelDriver;
             } else {
-                throw new \RuntimeException(
-                    'No query driver configured. Call useDriver() with a driver implementation, ' .
-                    'or install Laravel for auto-detection.'
+                throw new RuntimeException(
+                    'No query driver configured. Call useDriver() with a driver implementation, '
+                    . 'or install Laravel for auto-detection.'
                 );
             }
         }
@@ -239,17 +256,13 @@ trait AssertsQueryCounts
      *
      * This leverages the driver's lazy loading detection mechanism.
      * For Laravel, this uses Model::preventLazyLoading().
-     * For drivers that don't support lazy loading detection, this assertion passes silently.
+     * For drivers that don't support lazy loading detection, the test is marked as skipped.
      *
      * @see https://laravel.com/docs/eloquent-relationships#preventing-lazy-loading
      */
     public function assertNoLazyLoading(Closure $closure): void
     {
-        $violations = $this->collectLazyLoadingViolations($closure);
-
-        if ($violations === null) {
-            return;
-        }
+        $violations = $this->requireLazyLoadingViolations($closure);
 
         $this->assertEmpty(
             $violations,
@@ -259,11 +272,7 @@ trait AssertsQueryCounts
 
     public function assertLazyLoadingCount(int $expectedCount, Closure $closure): void
     {
-        $violations = $this->collectLazyLoadingViolations($closure);
-
-        if ($violations === null) {
-            return;
-        }
+        $violations = $this->requireLazyLoadingViolations($closure);
 
         $this->assertCount(
             $expectedCount,
@@ -342,6 +351,8 @@ trait AssertsQueryCounts
 
     public function assertMaxQueryTime(float $maxMilliseconds, ?Closure $closure = null): void
     {
+        $this->requireQueryTimingSupport();
+
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
             $queries = self::getQueriesExecuted();
             $slowQueries = $this->findSlowQueries($queries, $maxMilliseconds);
@@ -355,6 +366,8 @@ trait AssertsQueryCounts
 
     public function assertTotalQueryTime(float $maxMilliseconds, ?Closure $closure = null): void
     {
+        $this->requireQueryTimingSupport();
+
         $this->withQueryTracking($closure, function () use ($maxMilliseconds) {
             $queries = self::getQueriesExecuted();
             $totalTime = self::getTotalQueryTime();
@@ -377,6 +390,8 @@ trait AssertsQueryCounts
 
     private static function resetTrackingState(): void
     {
+        self::$driver?->stopListening();
+
         self::$lazyLoadingViolations = [];
         self::$duplicateQueries = [];
         self::$indexAnalysisResults = [];
@@ -384,6 +399,7 @@ trait AssertsQueryCounts
         self::$trackedQueries = [];
         self::$currentTrackingSession = null;
         self::$sessionIgnorePatterns = [];
+        self::$trackingDisabledForTest = false;
     }
 
     /**
@@ -413,7 +429,19 @@ trait AssertsQueryCounts
                 $closure();
             }
 
+            if (self::$trackingDisabledForTest) {
+                return;
+            }
+
             $queries = self::getQueriesExecuted();
+
+            if (empty($queries) && empty(self::$lazyLoadingViolations)) {
+                $this->fail(
+                    "No queries were tracked when assertQueriesAreEfficient() was called.\n"
+                    . 'Ensure you\'re calling trackQueries() in your test to start query tracking.'
+                );
+            }
+
             $issues = [];
 
             if (! empty(self::$lazyLoadingViolations)) {
@@ -738,11 +766,26 @@ trait AssertsQueryCounts
         return $message;
     }
 
+    private function requireQueryTimingSupport(): void
+    {
+        $driver = self::getDriver();
+
+        if ($driver instanceof SupportsQueryTimingInterface && ! $driver->supportsQueryTiming()) {
+            trigger_error(
+                'Query timing assertions are not supported by the current driver.',
+                E_USER_WARNING
+            );
+        }
+    }
+
     private function analyzeQueriesForRowCount(array $queries, int $maxRows): array
     {
         $defaultAnalyser = $this->getQueryAnalyser();
 
         if ($defaultAnalyser === null || ! $defaultAnalyser->supportsRowCounting()) {
+            $driver = $this->getDriverName();
+            trigger_error("Row count analysis not supported for driver: {$driver}", E_USER_WARNING);
+
             return [];
         }
 
@@ -818,6 +861,9 @@ trait AssertsQueryCounts
         $defaultAnalyser = $this->getQueryAnalyser();
 
         if ($defaultAnalyser === null) {
+            $driver = $this->getDriverName();
+            trigger_error("Index analysis not supported for driver: {$driver}. See registerQueryAnalyser() to add support.", E_USER_WARNING);
+
             return [];
         }
 
@@ -966,6 +1012,28 @@ trait AssertsQueryCounts
     }
 
     /**
+     * Collect lazy loading violations, skipping the test if the driver doesn't support it.
+     *
+     * @return array<int, array{model: string, relation: string}>
+     */
+    private function requireLazyLoadingViolations(Closure $closure): array
+    {
+        $violations = $this->collectLazyLoadingViolations($closure);
+
+        if ($violations === null) {
+            trigger_error(
+                'Lazy loading detection is not supported by the current driver. '
+                . 'This feature requires Laravel with Eloquent ORM.',
+                E_USER_WARNING
+            );
+
+            return [];
+        }
+
+        return $violations;
+    }
+
+    /**
      * Collect lazy loading violations.
      *
      * @return array<int, array{model: string, relation: string}>|null Returns null if not supported
@@ -1011,15 +1079,24 @@ trait AssertsQueryCounts
     private function withQueryTracking(?Closure $closure, callable $assertion): void
     {
         if ($closure === null) {
+            if (self::$trackingDisabledForTest) {
+                return;
+            }
+
             $assertion();
 
             return;
         }
 
         $this->trackQueries();
+        $disabled = self::$trackingDisabledForTest;
+
         try {
             $closure();
-            $assertion();
+
+            if (! $disabled) {
+                $assertion();
+            }
         } finally {
             self::$currentTrackingSession = null;
             self::getDriver()->disableLazyLoadingDetection();
@@ -1057,6 +1134,30 @@ trait AssertsQueryCounts
     }
 
     /**
+     * Check if the current test method or class has the #[DisableQueryTracking] attribute.
+     */
+    private function hasDisableQueryTrackingAttribute(): bool
+    {
+        if (! method_exists($this, 'name')) {
+            return false;
+        }
+
+        $classReflection = new ReflectionClass($this);
+
+        if (! empty($classReflection->getAttributes(DisableQueryTracking::class))) {
+            return true;
+        }
+
+        try {
+            $methodReflection = new ReflectionMethod($this, $this->name());
+
+            return ! empty($methodReflection->getAttributes(DisableQueryTracking::class));
+        } catch (ReflectionException) {
+            return false;
+        }
+    }
+
+    /**
      * Start tracking database queries across one or more connections.
      *
      * @param  array<string>|string|null  $connections  Connection name(s) to track, or null to track all connections
@@ -1064,6 +1165,12 @@ trait AssertsQueryCounts
     public function trackQueries(array|string|null $connections = null): void
     {
         self::resetTrackingState();
+
+        if ($this->hasDisableQueryTrackingAttribute()) {
+            self::$trackingDisabledForTest = true;
+
+            return;
+        }
 
         $connectionsArray = is_string($connections) ? [$connections] : $connections;
         self::$currentTrackingSession = uniqid('tracking_', true);
