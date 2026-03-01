@@ -26,6 +26,10 @@ class DoctrineDriverTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
+        if (! class_exists(Configuration::class)) {
+            self::markTestSkipped('Doctrine DBAL is not installed.');
+        }
+
         self::$doctrineDriver = new DoctrineDriver;
         $logger = new DoctrineQueryLogger(self::$doctrineDriver, 'default');
 

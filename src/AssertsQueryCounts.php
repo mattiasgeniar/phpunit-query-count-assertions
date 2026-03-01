@@ -32,7 +32,7 @@ trait AssertsQueryCounts
     /** @var array<int, array{query: string, bindings: array, issues: array, explain: array}> */
     private static array $indexAnalysisResults = [];
 
-    /** @var array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}> */
+    /** @var array<string, array{count: int, query: string, bindings: array, locations: array<int, array<int, array{file: string, line: int}>>}> */
     private static array $duplicateQueries = [];
 
     /**
@@ -88,9 +88,9 @@ trait AssertsQueryCounts
 
     /**
      * Minimum number of executions to consider a query a duplicate.
-     * Default 1 means queries executed 2+ times are duplicates.
+     * Default 2 means queries executed 2+ times are duplicates.
      */
-    private static int $duplicateQueryThreshold = 1;
+    private static int $duplicateQueryThreshold = 2;
 
     /**
      * Set the query driver implementation.
@@ -153,14 +153,14 @@ trait AssertsQueryCounts
     /**
      * Set the minimum number of executions to consider a query a duplicate.
      *
-     * Default is 1, meaning queries executed 2+ times are flagged as duplicates.
-     * Set to 2 to only flag queries executed 3+ times, etc.
+     * Default is 2, meaning queries executed 2+ times are flagged as duplicates.
+     * Set to 3 to only flag queries executed 3+ times, etc.
      *
-     * @param  int  $threshold  Minimum executions above 1 to flag (default: 1)
+     * @param  int  $threshold  Minimum execution count to flag as duplicate (default: 2)
      */
     public static function setDuplicateQueryThreshold(int $threshold): void
     {
-        self::$duplicateQueryThreshold = max(1, $threshold);
+        self::$duplicateQueryThreshold = max(2, $threshold);
     }
 
     /**
@@ -539,7 +539,7 @@ trait AssertsQueryCounts
         self::$duplicateQueries = [];
 
         foreach ($seen as $key => $data) {
-            if ($data['count'] > self::$duplicateQueryThreshold) {
+            if ($data['count'] >= self::$duplicateQueryThreshold) {
                 self::$duplicateQueries[$key] = [...$data, 'locations' => self::$queryStackTraces[$key] ?? []];
             }
         }
@@ -578,6 +578,10 @@ trait AssertsQueryCounts
      */
     private static function shouldIgnoreQuery(string $sql): bool
     {
+        if (empty(self::$globalIgnorePatterns) && empty(self::$sessionIgnorePatterns)) {
+            return false;
+        }
+
         $patterns = array_merge(self::$globalIgnorePatterns, self::$sessionIgnorePatterns);
 
         foreach ($patterns as $pattern) {
@@ -661,7 +665,7 @@ trait AssertsQueryCounts
                     for ($i = 1, $iMax = count($frames); $i < $iMax; $i++) {
                         $frame = $frames[$i];
                         $file = $this->formatFilePath($frame['file']);
-                        $lines[] = $frameIndentation . "← ./{$file}:{$frame['line']}";
+                        $lines[] = $frameIndentation . "← {$file}:{$frame['line']}";
                     }
                 }
             }

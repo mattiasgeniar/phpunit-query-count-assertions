@@ -331,7 +331,7 @@ self::setIgnoreQueryPatterns([
 
 ### Clearing patterns
 
-Per-test patterns are automatically cleared after each test. To manually clear:
+Per-test patterns are automatically cleared when `trackQueries()` is called (including inside closure-based assertions). To manually clear:
 
 ```php
 self::clearSessionIgnorePatterns();  // Clear per-test only
@@ -553,7 +553,7 @@ protected function setUp(): void
 {
     parent::setUp();
 
-    // Only flag queries executed 4+ times as duplicates
+    // Only flag queries executed 3+ times as duplicates
     self::setDuplicateQueryThreshold(3);
 
     $this->trackQueries();
