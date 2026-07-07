@@ -22,6 +22,10 @@ class PhalconDriverTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
+        if (! class_exists(Sqlite::class)) {
+            self::markTestSkipped('Phalcon is not installed.');
+        }
+
         self::$db = new Sqlite(['dbname' => ':memory:']);
 
         self::$phalconDriver = new PhalconDriver;

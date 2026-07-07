@@ -32,13 +32,14 @@ trait AssertsQueryCounts
     /** @var array<int, array{query: string, bindings: array, issues: array, explain: array}> */
     private static array $indexAnalysisResults = [];
 
-    /** @var array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}> */
+    /** @var array<string, array{count: int, query: string, bindings: array, locations: array<int, array<int, array{file: string, line: int}>>}> */
     private static array $duplicateQueries = [];
 
     /**
      * Stack traces for executed queries, keyed by query signature.
+     * Each execution stores an array of frames (based on stackTraceDepth).
      *
-     * @var array<string, array<int, array{file: string, line: int}>>
+     * @var array<string, array<int, array<int, array{file: string, line: int}>>>
      */
     private static array $queryStackTraces = [];
 
@@ -67,6 +68,31 @@ trait AssertsQueryCounts
     private static bool $trackingDisabledForTest = false;
 
     /**
+     * Global patterns to ignore (applied to all tests).
+     *
+     * @var array<string>
+     */
+    private static array $globalIgnorePatterns = [];
+
+    /**
+     * Per-session patterns to ignore (cleared after each test).
+     *
+     * @var array<string>
+     */
+    private static array $sessionIgnorePatterns = [];
+
+    /**
+     * Number of stack trace frames to capture per query execution.
+     */
+    private static int $stackTraceDepth = 1;
+
+    /**
+     * Minimum number of executions to consider a query a duplicate.
+     * Default 2 means queries executed 2+ times are duplicates.
+     */
+    private static int $duplicateQueryThreshold = 2;
+
+    /**
      * Set the query driver implementation.
      *
      * Use this to switch between Laravel, Doctrine, Phalcon, or custom drivers.
@@ -75,6 +101,66 @@ trait AssertsQueryCounts
     {
         self::$driver?->stopListening();
         self::$driver = $driver;
+    }
+
+    /**
+     * Set global ignore patterns (applied to all tests).
+     *
+     * Patterns can be:
+     * - Plain strings: matched using str_contains()
+     * - Regex patterns: strings starting and ending with / are treated as regex
+     *
+     * Call in setUp() or setUpBeforeClass().
+     *
+     * @param  array<string>  $patterns  Regex ('/pattern/') or contains strings
+     */
+    public static function setIgnoreQueryPatterns(array $patterns): void
+    {
+        self::$globalIgnorePatterns = $patterns;
+    }
+
+    /**
+     * Add patterns for current test only (merged with global).
+     *
+     * @param  array<string>  $patterns  Regex ('/pattern/') or contains strings
+     */
+    public static function addIgnoreQueryPatterns(array $patterns): void
+    {
+        self::$sessionIgnorePatterns = array_merge(self::$sessionIgnorePatterns, $patterns);
+    }
+
+    /**
+     * Clear per-test patterns (called automatically in resetTrackingState).
+     */
+    public static function clearSessionIgnorePatterns(): void
+    {
+        self::$sessionIgnorePatterns = [];
+    }
+
+    /**
+     * Set the number of stack trace frames to capture per query.
+     *
+     * When debugging queries originating from generic locations (Event handlers,
+     * middleware, etc.), increase this to see more of the call stack.
+     *
+     * @param  int  $depth  Number of frames to capture (default: 1)
+     */
+    public static function setStackTraceDepth(int $depth): void
+    {
+        self::$stackTraceDepth = max(1, $depth);
+    }
+
+    /**
+     * Set the minimum number of executions to consider a query a duplicate.
+     *
+     * Default is 2, meaning queries executed 2+ times are flagged as duplicates.
+     * Set to 3 to only flag queries executed 3+ times, etc.
+     *
+     * @param  int  $threshold  Minimum execution count to flag as duplicate (default: 2)
+     */
+    public static function setDuplicateQueryThreshold(int $threshold): void
+    {
+        self::$duplicateQueryThreshold = max(2, $threshold);
     }
 
     /**
@@ -312,6 +398,7 @@ trait AssertsQueryCounts
         self::$queryStackTraces = [];
         self::$trackedQueries = [];
         self::$currentTrackingSession = null;
+        self::$sessionIgnorePatterns = [];
         self::$trackingDisabledForTest = false;
     }
 
@@ -391,7 +478,7 @@ trait AssertsQueryCounts
     /**
      * Get duplicate queries from the last check.
      *
-     * @return array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}>
+     * @return array<string, array{count: int, query: string, bindings: array, locations: array<int, array<int, array{file: string, line: int}>>}>
      */
     public static function getDuplicateQueries(): array
     {
@@ -434,7 +521,7 @@ trait AssertsQueryCounts
 
     /**
      * @param  array<int, array{query: string, bindings?: array, time?: float}>  $queries
-     * @return array<string, array{count: int, query: string, bindings: array, locations: array<int, array{file: string, line: int}>}>
+     * @return array<string, array{count: int, query: string, bindings: array, locations: array<int, array<int, array{file: string, line: int}>>}>
      */
     private function findDuplicateQueries(array $queries): array
     {
@@ -452,7 +539,7 @@ trait AssertsQueryCounts
         self::$duplicateQueries = [];
 
         foreach ($seen as $key => $data) {
-            if ($data['count'] > 1) {
+            if ($data['count'] >= self::$duplicateQueryThreshold) {
                 self::$duplicateQueries[$key] = [...$data, 'locations' => self::$queryStackTraces[$key] ?? []];
             }
         }
@@ -483,11 +570,39 @@ trait AssertsQueryCounts
 
     private static function buildQuerySignature(string $sql, array $bindings): string
     {
-        return $sql . '|' . json_encode($bindings);
+        return $sql . '|' . json_encode($bindings, JSON_THROW_ON_ERROR);
     }
 
     /**
-     * @return array<int, array{file: string, line: int}>
+     * Check if query should be ignored based on patterns.
+     */
+    private static function shouldIgnoreQuery(string $sql): bool
+    {
+        if (empty(self::$globalIgnorePatterns) && empty(self::$sessionIgnorePatterns)) {
+            return false;
+        }
+
+        $patterns = array_merge(self::$globalIgnorePatterns, self::$sessionIgnorePatterns);
+
+        foreach ($patterns as $pattern) {
+            // Regex pattern (starts and ends with /)
+            if (preg_match('#^/.+/[a-z]*$#', $pattern)) {
+                if (preg_match($pattern, $sql)) {
+                    return true;
+                }
+            } else {
+                // Simple contains match
+                if (str_contains($sql, $pattern)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<int, array<int, array{file: string, line: int}>>
      */
     private function getAllQueryLocations(string $sql, array $bindings): array
     {
@@ -498,7 +613,7 @@ trait AssertsQueryCounts
 
     /**
      * @param  array<string, int>  $offsets
-     * @return array<int, array{file: string, line: int}>
+     * @return array<int, array<int, array{file: string, line: int}>>
      */
     private function takeNextQueryLocation(string $sql, array $bindings, array &$offsets): array
     {
@@ -506,13 +621,13 @@ trait AssertsQueryCounts
         $offset = $offsets[$key] ?? 0;
         $offsets[$key] = $offset + 1;
 
-        $location = self::$queryStackTraces[$key][$offset] ?? null;
+        $frames = self::$queryStackTraces[$key][$offset] ?? null;
 
-        return $location ? [$location] : [];
+        return $frames ? [$frames] : [];
     }
 
     /**
-     * @param  array<int, array{file: string, line: int}>  $locations
+     * @param  array<int, array<int, array{file: string, line: int}>>  $locations  Array of executions, each with array of frames
      * @param  array<int, string>  $extraLines
      */
     private function formatQueryDetails(
@@ -524,6 +639,7 @@ trait AssertsQueryCounts
         $lines = [];
         $indentation = str_repeat(' ', $indent);
         $childIndentation = str_repeat(' ', $indent + 2);
+        $frameIndentation = str_repeat(' ', $indent + 6);
 
         if (! empty($bindings)) {
             $bindingsText = json_encode($bindings);
@@ -536,10 +652,22 @@ trait AssertsQueryCounts
 
         if (! empty($locations)) {
             $lines[] = $indentation . 'Locations:';
-            foreach ($locations as $locationIndex => $location) {
+            foreach ($locations as $locationIndex => $frames) {
                 $occurrenceNumber = $locationIndex + 1;
-                $file = $this->formatFilePath($location['file']);
-                $lines[] = $childIndentation . "#{$occurrenceNumber}: {$file}:{$location['line']}";
+
+                // First frame is the primary location
+                if (! empty($frames)) {
+                    $firstFrame = $frames[0];
+                    $file = $this->formatFilePath($firstFrame['file']);
+                    $lines[] = $childIndentation . "#{$occurrenceNumber}: {$file}:{$firstFrame['line']}";
+
+                    // Additional frames shown with arrow prefix
+                    for ($i = 1, $iMax = count($frames); $i < $iMax; $i++) {
+                        $frame = $frames[$i];
+                        $file = $this->formatFilePath($frame['file']);
+                        $lines[] = $frameIndentation . "← {$file}:{$frame['line']}";
+                    }
+                }
             }
         }
 
@@ -571,7 +699,7 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @return array<int, array{query: string, bindings: array, time: float, locations: array<int, array{file: string, line: int}>}>
+     * @return array<int, array{query: string, bindings: array, time: float, locations: array<int, array<int, array{file: string, line: int}>>}>
      */
     private function findSlowQueries(array $queries, float $maxMilliseconds): array
     {
@@ -730,7 +858,7 @@ trait AssertsQueryCounts
      * Analyze queries for index usage.
      *
      * @param  Severity  $minSeverity  Minimum severity level to report
-     * @return array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations: array<int, array{file: string, line: int}>}>
+     * @return array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations: array<int, array<int, array{file: string, line: int}>>}>
      */
     private function analyzeQueriesForIndexUsage(array $queries, Severity $minSeverity = Severity::Warning): array
     {
@@ -813,7 +941,7 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array{file: string, line: int}>}>  $issues
+     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array<int, array{file: string, line: int}>>}>  $issues
      */
     private function formatIndexIssuesMessage(array $issues, string $header, string $emptyMessage): string
     {
@@ -847,7 +975,7 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array{file: string, line: int}>}>  $issues
+     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array<int, array{file: string, line: int}>>}>  $issues
      */
     private function reportIndexInfoIssues(array $issues): void
     {
@@ -876,7 +1004,7 @@ trait AssertsQueryCounts
     }
 
     /**
-     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array{file: string, line: int}>}>  $issues
+     * @param  array<int, array{query: string, bindings: array, issues: array<int, QueryIssue>, locations?: array<int, array<int, array{file: string, line: int}>>}>  $issues
      */
     private function formatIndexFailureMessage(array $issues): string
     {
@@ -1059,6 +1187,11 @@ trait AssertsQueryCounts
                 return;
             }
 
+            // Filter ignored queries
+            if (self::shouldIgnoreQuery($query['query'])) {
+                return;
+            }
+
             self::$trackedQueries[] = $query;
 
             $key = self::buildQuerySignature($query['query'], $query['bindings']);
@@ -1077,11 +1210,12 @@ trait AssertsQueryCounts
      * Capture a stack trace filtered to show only relevant application code.
      *
      * @param  array<int, string>  $skipPatterns  Regex patterns to skip
-     * @return array{file: string, line: int}
+     * @return array<int, array{file: string, line: int}>
      */
     private static function captureRelevantStackTrace(array $skipPatterns): array
     {
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 50);
+        $frames = [];
         $fallback = ['file' => 'unknown', 'line' => 0];
 
         foreach ($trace as $frame) {
@@ -1105,11 +1239,15 @@ trait AssertsQueryCounts
             }
 
             if (! $isInternal) {
-                return ['file' => $frame['file'], 'line' => $frame['line']];
+                $frames[] = ['file' => $frame['file'], 'line' => $frame['line']];
+
+                if (count($frames) >= self::$stackTraceDepth) {
+                    return $frames;
+                }
             }
         }
 
-        return $fallback;
+        return ! empty($frames) ? $frames : [$fallback];
     }
 
     /**

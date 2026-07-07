@@ -275,6 +275,102 @@ This is useful when:
 - You want to verify that specific queries go to the right connection
 - You're debugging connection routing in read/write split setups
 
+## Ignoring framework queries
+
+Filter out framework-related queries (sessions, cache, migrations) from tracking using patterns:
+
+### Global patterns
+
+Set patterns that apply to all tests in `setUp()` or `setUpBeforeClass()`:
+
+```php
+protected function setUp(): void
+{
+    parent::setUp();
+
+    // Ignore queries matching these patterns
+    self::setIgnoreQueryPatterns([
+        'sessions',              // Contains: any query with "sessions"
+        'schema_migrations',     // Contains: migration queries
+        '/^SELECT.*_cache/',     // Regex: cache table selects
+    ]);
+
+    $this->trackQueries();
+}
+```
+
+### Per-test patterns
+
+Add patterns for specific tests (merged with global patterns):
+
+```php
+public function test_something(): void
+{
+    self::addIgnoreQueryPatterns([
+        'temporary_results',
+        '/INSERT INTO logs/',
+    ]);
+
+    $this->assertQueryCountMatches(2, function () {
+        // Only counts queries not matching any pattern
+    });
+}
+```
+
+### Pattern types
+
+- **Contains match**: Plain strings match if the query contains them anywhere
+- **Regex match**: Patterns starting and ending with `/` are treated as regular expressions
+
+```php
+self::setIgnoreQueryPatterns([
+    'sessions',                    // Matches: SELECT * FROM sessions WHERE...
+    '/^SELECT.*FROM.*_cache$/',    // Matches: SELECT id FROM user_cache
+]);
+```
+
+### Clearing patterns
+
+Per-test patterns are automatically cleared when `trackQueries()` is called (including inside closure-based assertions). To manually clear:
+
+```php
+self::clearSessionIgnorePatterns();  // Clear per-test only
+self::setIgnoreQueryPatterns([]);    // Clear global patterns
+```
+
+## Stack trace depth
+
+By default, each query location shows a single stack frame. When debugging queries originating from generic locations (event handlers, middleware, service providers), increase the depth to see more of the call stack:
+
+```php
+protected function setUp(): void
+{
+    parent::setUp();
+
+    // Show 3 frames per query location for better debugging
+    self::setStackTraceDepth(3);
+
+    $this->trackQueries();
+}
+```
+
+Output with depth > 1:
+
+```
+Duplicate queries detected:
+
+  1. Executed 2 times: SELECT * FROM users WHERE id = ?
+     Bindings: [1]
+     Locations:
+       #1: app/Events/UserCreated.php:25
+           ← app/Services/UserService.php:42
+           ← app/Http/Controllers/UserController.php:18
+       #2: app/Events/UserCreated.php:25
+           ← app/Jobs/ProcessUserData.php:31
+```
+
+This makes it easier to identify the actual source when queries originate from shared code paths.
+
 ## Failure messages
 
 Failed assertions show you the actual queries:
@@ -447,6 +543,27 @@ Duplicate queries detected:
 ```
 
 **Note:** Different bindings = different queries. `User::find(1)` and `User::find(2)` are unique.
+
+### Duplicate threshold
+
+By default, any query executed 2+ times is flagged as a duplicate. Configure the threshold to allow some level of duplication:
+
+```php
+protected function setUp(): void
+{
+    parent::setUp();
+
+    // Only flag queries executed 3+ times as duplicates
+    self::setDuplicateQueryThreshold(3);
+
+    $this->trackQueries();
+}
+```
+
+This is useful when:
+- Some queries are legitimately executed multiple times (e.g., permission checks)
+- You want to catch severe N+1 issues (10+ queries) but allow minor duplication
+- Gradually tightening thresholds as you fix issues
 
 ## Row count threshold (MySQL / MariaDB only)
 
