@@ -588,7 +588,7 @@ use Mattiasgeniar\PhpunitQueryCountAssertions\AssertsQueryCounts;
 
 pest()->extend(Tests\TestCase::class)
     ->use(AssertsQueryCounts::class)
-    ->beforeEach(fn () => self::trackQueries())
+    ->beforeEach(fn () => $this->trackQueries())
     ->afterEach(fn () => $this->assertQueriesAreEfficient())
     ->in('Feature');
 ```
