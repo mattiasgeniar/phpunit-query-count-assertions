@@ -32,7 +32,7 @@
         "doctrine/dbal": "^4.0",
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.18",
-        "orchestra/testbench": "^9.0|^10.0",
+        "orchestra/testbench": "^11.3.0",
         "phalcon/phalcon": "^6.0",
         "phpunit/phpunit": "^11.0"
     },
