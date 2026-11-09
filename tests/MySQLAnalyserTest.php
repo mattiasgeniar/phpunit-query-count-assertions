@@ -232,7 +232,7 @@ class MySQLAnalyserTest extends TestCase
     {
         $analyser = new MySQLAnalyser;
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $versionCalls = 0;
         $explainCalls = 0;
 

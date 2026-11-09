@@ -12,8 +12,8 @@ Supports Laravel, Doctrine/Symfony, and Phalcon.
 ## Requirements
 
 - PHP 8.2+
-- PHPUnit 11 or Pest 3
-- **Laravel 11/12**, **Doctrine DBAL 4**, or **Phalcon 6+**
+- PHPUnit 11, 12 or 13, or Pest 3, 4 or 5
+- **Laravel 12 or 13**, **Doctrine DBAL 4**, or **Phalcon 6+**
 
 ## Driver Compatibility
 
